@@ -2491,3 +2491,93 @@ Function Write-ToLog {
     #Write-ToLog -Message "Dette er en skidt log" -Component "Dårlig komponent" -LogFilePath $LogFilePath
 }
 #endregion Write-ToLog
+
+function Import-Ods {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory, Position = 0)]
+        [ValidateScript({ Test-Path $_ })]
+        [string]$FilePath,
+
+        [string]$LibreOfficePath = "C:\Program Files\LibreOffice\program\soffice.exe"
+    )
+
+    DynamicParam {
+        $cmd = Get-Command Import-Excel -CommandType Function
+
+        $commonParams = @(
+            'Verbose','Debug','ErrorAction','ErrorVariable',
+            'WarningAction','WarningVariable','InformationAction',
+            'InformationVariable','OutVariable','OutBuffer',
+            'PipelineVariable','ProgressAction'
+        )
+
+        $exclude = $commonParams + @('Path','FilePath','LibreOfficePath')
+
+        $dict = [System.Management.Automation.RuntimeDefinedParameterDictionary]::new()
+
+        foreach ($param in $cmd.Parameters.Values) {
+            if ($param.Name -in $exclude) { continue }
+
+            $attrs = [System.Collections.ObjectModel.Collection[System.Attribute]]::new()
+
+            $paramAttr = [System.Management.Automation.ParameterAttribute]::new()
+            $attrs.Add($paramAttr)
+
+            $rdp = [System.Management.Automation.RuntimeDefinedParameter]::new(
+                $param.Name,
+                $param.ParameterType,
+                $attrs
+            )
+
+            $dict.Add($param.Name, $rdp)
+        }
+
+        return $dict
+    }
+
+    begin {
+        if (-not (Test-Path $LibreOfficePath)) {
+            throw "LibreOffice (soffice.exe) blev ikke fundet: $LibreOfficePath"
+        }
+
+        $tempDir = New-Item -ItemType Directory -Path ([System.IO.Path]::GetTempPath()) -Name ([guid]::NewGuid())
+        $tempXlsx = Join-Path $tempDir.FullName (
+            [System.IO.Path]::GetFileNameWithoutExtension($FilePath) + ".xlsx"
+        )
+    }
+
+    process {
+        try {
+            & $LibreOfficePath `
+                --headless `
+                --convert-to xlsx `
+                --outdir $tempDir.FullName `
+                $FilePath | Out-Null
+
+            if (-not (Test-Path $tempXlsx)) {
+                throw "Konvertering fejlede – XLSX blev ikke oprettet."
+            }
+
+            # Fjern egne parametre før videresendelse
+            $importParams = @{} + $PSBoundParameters
+            $importParams.Remove('FilePath')
+            $importParams.Remove('LibreOfficePath')
+            $importParams.Remove('Path')
+
+            Import-Excel -Path $tempXlsx @importParams
+        }
+        finally {
+            Remove-Item $tempDir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+
+Set-Alias -Name Import-Calc -Value Import-Ods
+Set-Alias -Name Export-Calc -Value Export-Ods
+Set-Alias -Name New-Calc -Value New-Ods
+Set-Alias -Name Update-Calc -Value Update-Ods
+Set-Alias -Name Remove-Calc -Value Remove-Ods
+Set-Alias -Name Clear-History -Value Invoke-CleanupHistory
+Set-Alias -Name Pause-WithTimeout -Value Invoke-PauseWithTimeout

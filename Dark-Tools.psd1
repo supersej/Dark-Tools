@@ -22,7 +22,7 @@
     FunctionsToExport = '*'
     CmdletsToExport   = @()
     VariablesToExport = @()
-    AliasesToExport   = @()    
+    AliasesToExport   = 'Import-Calc', 'Export-Calc', 'New-Calc', 'Update-Calc', 'Remove-Calc', 'Clear-History', 'Pause-WithTimeout'
 
     PrivateData = @{
         PSData = @{
