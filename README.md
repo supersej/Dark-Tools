@@ -198,34 +198,60 @@ Packets lost: 0
 
 - **Test-Numeric** - Tests if a value is numeric.
 ```powershell
+Test-Numeric -Value "123"
+True
 ```
 
 - **Test-PendingReboot** - Checks whether a Windows system requires a reboot.
 ```powershell
+Test-PendingReboot
+
+RebootRequired Reasons
+-------------- -------
+          True Component Based Servicing, Pending file rename operations
 ```
 
-- **Test-SoftwareSources** - Checks for invalid software source paths in registry.
+- **Test-SoftwareSources** - Checks for invalid software source paths in registry under HKLM:\SOFTWARE\Classes\Installer\Products.
 ```powershell
+Test-SoftwareSources
+Total products        : 81
+Products with Net     : 81
+Products with errors  : 0
 ```
 
 - **Update-Notion** - Updates Notion application to the latest version.
 ```powershell
+Update-Notion
 ```
 
 - **Watch-FileChange** - Monitors a file for changes and alerts on modification.
 ```powershell
+Watch-FileChange -Path "C:\system\main.log"
+Monitoring file: C:\system\main.log
+Press Ctrl+C to stop.
+
+==========================================
+ FILE CHANGED: 01/03/2026 17:16:21
+==========================================
+
+Press Enter to continue monitoring...:
 ```
 
 - **Write-CheckFailed** - Writes a failure indicator (✗) to console.
 ```powershell
+Write-CheckFailed -Text "Step in script"
+Step in script ✗
 ```
 
 - **Write-CheckSucces** - Writes a success indicator (✓) to console.
 ```powershell
+Write-CheckSucces -Text "Step in script"
+Step in script ✓
 ```
 
 - **Write-Log** - Logs messages in SCCM-style format with component, timestamp, and severity level.
 ```powershell
+Write-Log -Path "C:\Logs\install.log" -Message "Error occurred" -Component "Setup" -Type Error -OutputFormat Host
 ```
 
 - **Write-ToLog** - Writes log entries in RN standard format.

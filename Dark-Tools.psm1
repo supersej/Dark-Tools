@@ -2359,7 +2359,7 @@ Function Write-ToLog {
     .SYNOPSIS
         Writes log entries in RN standard format.
     .DESCRIPTION
-        Logs messages in RN standardized format with component, timestamp, and thread ID information. Appends to specified log file in UTF-8 encoding.
+        Logs messages in simple standardized format with component, timestamp, and thread ID information. Appends to specified log file in UTF-8 encoding.
     .PARAMETER Message
         Specifies the message to log.
     .PARAMETER Component
@@ -2378,13 +2378,10 @@ Function Write-ToLog {
         [Parameter(Mandatory=$true)]
         $LogFilePath)
 
-    #https://confluence.rn.dk/display/KPP/L3+-+Placering+af+log+filer
-    #RN log funktion - Simplificeret en smule af Dark (Path er nu kun én parameter)
     $Write = "{0} `$$<{1}><{2} {3}><thread={4}>" -f ($message), ($component), (Get-Date -Format "MM-dd-yyyy"), (Get-Date -Format "HH:mm:ss.ffffff"), $pid
     $Write | Out-File -Append -Encoding UTF8 -FilePath $LogFilePath
-    #$LogFilePath  = "C:\ProgramData\Installationlogs\Installer\bomgar_standard.log"
-    #Write-ToLog -Message "Dette er en god log" -Component "God komponent" -LogFilePath $LogFilePath
-    #Write-ToLog -Message "Dette er en skidt log" -Component "Dårlig komponent" -LogFilePath $LogFilePath
+    #Write-ToLog -Message "This is a good log" -Component "Good component" -LogFilePath $LogFilePath
+    #Write-ToLog -Message "This is a bad log" -Component "Bad component" -LogFilePath $LogFilePath
 }
 #endregion Write-ToLog
 
