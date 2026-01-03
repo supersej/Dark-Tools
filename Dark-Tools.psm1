@@ -1280,7 +1280,7 @@ function Get-UserAdGroups {
 #endregion Get-UserAdGroups
 
 #region Get-Wanip
-Function Get-Wanip () {
+Function Get-WanIp () {
     <#
     .SYNOPSIS
         Retrieves your public WAN IP address and related information.
@@ -1304,15 +1304,9 @@ Function Get-Wanip () {
 	$wanip = (Invoke-WebRequest "https://wtfismyip.com/json").content
     $ProgressPreference = 'Continue'
 
-	if (!($wanip)) { Write-Host "Kunne ikke finde Wanip via wtfismyip.com" -ForegroundColor Yellow; break }
+	if (!($wanip)) { Write-Host "Could not find Wanip via wtfismyip.com" -ForegroundColor Yellow; break }
 
 	$wanip = $wanip.Replace("YourFucking","")
-	$wanip = $wanip.Replace("IPAddress","IPAddresse")
-	$wanip = $wanip.Replace("Location","Lokation")
-	$wanip = $wanip.Replace("Hostname","Hostnavn")
-	$wanip = $wanip.Replace("ISP","Udbyder")
-	$wanip = $wanip.Replace("TorExit","Tor")
-	$wanip = $wanip.Replace("CountryCode","Land")
 	$wanip = $wanip | convertfrom-json
 	($wanip | out-string).trim()
     if ($CopyIpToClipboard -eq $true) {
@@ -1525,59 +1519,70 @@ function Search-FileContent {
     .SYNOPSIS
         Searches for specific content within files in a given path.
     .DESCRIPTION
-        Searches for files containing specified content using pattern matching. Returns file paths where content is found, with optional display of matching lines.
+        Searches for files containing specified content.
+        Displays matching lines with line numbers.
+        Displays one-line error messages per file if a file cannot be read.
     .PARAMETER Content
-        Specifies the text content to search for within files.
+        Text to search for.
     .PARAMETER Filter
-        Specifies a filter pattern for file names (e.g., '*.txt', '*.log'). If not specified, all files are searched.
+        File filter (e.g. *.log).
     .PARAMETER Recurse
-        If specified, searches recursively through all subdirectories.
+        Search recursively.
     .PARAMETER Path
-        Specifies the starting path for the search. Defaults to the current location.
-    .PARAMETER ShowContent
-        If specified, displays the matching lines along with file paths. If not specified, only displays file paths.
-    .EXAMPLE
-        Search-FileContent -Content "error" -Path "C:\Logs"
-        Searches for files containing "error" in C:\Logs directory.
-    .EXAMPLE
-        Search-FileContent -Content "warning" -Path "C:\Logs" -Recurse -ShowContent
-        Searches recursively for "warning" in C:\Logs and displays matching lines.
-    .EXAMPLE
-        Search-FileContent -Content "failed" -Filter "*.log" -Path "C:\Logs" -Recurse
-        Searches for "failed" in .log files recursively.
+        Root path. Defaults to current location.
+    .PARAMETER HideContent
+        Only display file paths when content is found.
     #>
 
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, Position = 0)]
+        [Parameter(Mandatory, Position = 0)]
         [string]$Content,
+
         [string]$Filter,
+
         [switch]$Recurse,
+
         [string]$Path = (Get-Location),
+
         [switch]$HideContent
     )
-    # Build argument list for Get-ChildItem
+
     $gciParams = @{
-        Path = $Path
-        File = $true
+        Path        = $Path
+        File        = $true
         ErrorAction = 'SilentlyContinue'
     }
-    if ($Filter) {
-        $gciParams.Filter = $Filter
-    }
-    if ($Recurse) {
-        $gciParams.Recurse = $true
-    }
+
+    if ($Filter)   { $gciParams.Filter  = $Filter }
+    if ($Recurse)  { $gciParams.Recurse = $true }
+
     $files = Get-ChildItem @gciParams
+
     foreach ($file in $files) {
-        $match = Select-String -Path $file.FullName -Pattern $Content -SimpleMatch
-        if ($match) {
-            if ($HideContent) {
-                write-host $file.FullName -ForegroundColor green
-            } else {
-                write-host "In: $($file.FullName)"
-                $match
+        try {
+            $matches = Select-String -Path $file.FullName -Pattern $Content -SimpleMatch -ErrorAction Stop
+
+            if ($matches) {
+                if ($HideContent) {
+                    Write-Host $file.FullName -ForegroundColor Green
+                }
+                else {
+                    Write-Host "In: $($file.FullName)" -ForegroundColor Cyan
+                    foreach ($match in $matches) {
+                        Write-Host ("  Line {0}: {1}" -f $match.LineNumber, $match.Line)
+                    }
+                }
             }
+        }
+        catch [System.UnauthorizedAccessException] {
+            Write-Warning "Access denied: Unable to read file '$($file.FullName)'."
+        }
+        catch [System.IO.IOException] {
+            Write-Warning "File is locked: Unable to read file '$($file.FullName)'."
+        }
+        catch {
+            Write-Warning "Unable to read file '$($file.FullName)'."
         }
     }
 }

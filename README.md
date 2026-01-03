@@ -53,7 +53,7 @@ Get-ExecutableArchitecture C:\windows\system32\calc.exe
 
 - **Get-FileViaExplorer** - Opens a file browser dialog for interactive file selection with optional filtering.
 ```powershell
-Get-FileViaExplorer
+$SelectedFile = Get-FileViaExplorer
 ```
 
 - **Get-FolderSize** - Calculates the total size of a folder in megabytes with recursive and filtering options.
@@ -130,30 +130,48 @@ RDP remote users
 
 - **Get-Wanip** - Retrieves your public WAN IP address and related information.
 ```powershell
+Get-WanIp
+IPAddress   : 123.123.123.123
+Location    : Some Location
+Hostname    : some.hostname
+ISP         : Your Provider
+TorExit     : False
+City        : Some City
+Country     : Some Country
+CountryCode : Some Country Cide
 ```
 
 - **Import-TaskXml** - Imports scheduled tasks from XML definition files.
 ```powershell
+Import-TaskXml -TaskXmlPath C:\temp\SomeTask.xml -TaskName "Wanted Taskname"
 ```
 
 - **Install-Chocolatey** - Installs or detects Chocolatey package manager.
 ```powershell
+Install-Chocolatey
+# Same install method as the official method used on https://chocolatey.org
 ```
 
-- **Install-Notion** - Installs Notion application using Winget.
+- **Install-Notion** - Installs Notion application using Winget silent to "C:\Program Files\Notion".
 ```powershell
+Install-Notion
 ```
 
 - **Invoke-CleanupHistory** - Cleans Windows Recent files and clipboard history.
 ```powershell
+Invoke-CleanupHistory
 ```
 
 - **Invoke-PauseWithTimeout** - Pauses script execution with timeout and keystroke detection.
 ```powershell
+Invoke-PauseWithTimeout -message "Wait for 10 seconds" -SleepSeconds 10
+Wait for 10 seconds
+# Waits for 10 seconds or for a keystroke
 ```
 
 - **Search-FileContent** - Searches for specific content within files with filtering and recursion options.
 ```powershell
+Search-FileContent -Path "C:\Windows\CCM\Logs" -Content "ERROR" -Recurse -ShowContent
 ```
 
 - **Show-Calendar** - Displays a visual calendar with optional date highlighting.
