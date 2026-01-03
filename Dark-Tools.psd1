@@ -7,14 +7,14 @@
 #
 
 @{
-    RootModule        = 'Dark-Tools.psm1' # Script module or binary module file associated with this manifest.
-    ModuleVersion = '0.0.3' # Version number of this module.
-    GUID = '88d5a1fe-4f3b-45bd-ae30-c5d812626165' # ID used to uniquely identify this module
-    Author = 'Daniel Ravnholt' # Author of this module
-    CompanyName = 'Dark Enterprise' # Company or vendor of this module
-    Copyright = '(c) Dark Enterprise. All rights reserved.' # Copyright statement for this module
-    Description = 'My private collection of PowerShell tools.' # Description of the functionality provided by this module
-    PowerShellVersion = '7.0' # Minimum version of the PowerShell engine required by this module
+    RootModule          = 'Dark-Tools.psm1' # Script module or binary module file associated with this manifest.
+    ModuleVersion       = '0.1.0' # Version number of this module.
+    GUID                = '88d5a1fe-4f3b-45bd-ae30-c5d812626165' # ID used to uniquely identify this module
+    Author              = 'Daniel Ravnholt' # Author of this module
+    CompanyName         = 'Dark Enterprise' # Company or vendor of this module
+    Copyright           = '(c) Dark Enterprise. All rights reserved.' # Copyright statement for this module
+    Description         = 'My private collection of PowerShell tools.' # Description of the functionality provided by this module
+    PowerShellVersion   = '7.0' # Minimum version of the PowerShell engine required by this module
 
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
     #FunctionsToExport = 'Invoke-CleanupHistory', 'Install-Notion', 'Update-Notion'
