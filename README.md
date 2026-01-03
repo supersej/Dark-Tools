@@ -176,10 +176,24 @@ Search-FileContent -Path "C:\Windows\CCM\Logs" -Content "ERROR" -Recurse -ShowCo
 
 - **Show-Calendar** - Displays a visual calendar with optional date highlighting.
 ```powershell
+Show-Calendar -Start (Get-Date '2025-03-01') -End (Get-Date '2025-05-01')
 ```
 
 - **Test-NetConnectionContinuous** - Continuously pings a URL with live statistics display.
 ```powershell
+Test-NetConnectionContinuous -Url "google.com"
+Ping statistics for google.com:
+Recipient IP: 142.250.147.101
+Pinging - 32ms
+Started: 2026-01-03 17:02:26
+Time since start: 4 seconds
+
+Current ping: 32 ms
+Highest ping: 32 ms
+Lowest ping: 31 ms
+Average ping: 31,80 ms
+Packets sent: 5
+Packets lost: 0
 ```
 
 - **Test-Numeric** - Tests if a value is numeric.

@@ -1752,14 +1752,14 @@ function Test-NetConnectionContinuous {
         [string]$Url,
 
         [Parameter()]
-        [int]$Interval = 1000, # Interval i millisekunder mellem ping
+        [int]$Interval = 1000, # Interval in milliseconds between pings
 
         [Parameter(Mandatory = $false)]
-        [switch]$CopyIpToClipboard = $false # Kopier IP-adresse til udklipsholder
+        [switch]$CopyIpToClipboard = $false # Copies IP address to clipboard
     )
 
-  #region functions
-  function Compare-DateTime {
+    #region functions
+    function Compare-DateTime {
     param(
       [Parameter(Mandatory = $true)]
       [datetime]$DateTime1,
@@ -1815,85 +1815,83 @@ function Test-NetConnectionContinuous {
     }
   
     return $Resultat
-  }
-  #endregion
+    }
+    #endregion
   
-  # Initialisering af variable
-  $minPing = $null
-  $maxPing = $null
-  $sumPing = 0
-  $packetsSent = 0
-  $packetsLost = 0
-  $StartTime = Get-Date
+    # Initialization of variables
+    $minPing = $null
+    $maxPing = $null
+    $sumPing = 0
+    $packetsSent = 0
+    $packetsLost = 0
+    $StartTime = Get-Date
 
-  
-  while ($true) {
-    # Ping webadressen
-    $pingResult = Test-Connection -TargetName $Url -Count 1 -ErrorAction SilentlyContinue
+    while ($true) {
+        # Ping webaddress
+        $pingResult = Test-Connection -TargetName $Url -Count 1 -ErrorAction SilentlyContinue
 
-    # Ryd konsollen
-    Clear-Host
+        # Clear console
+        Clear-Host
 
-    if ($CopyIpToClipboard) {
-      # Kopier IP-adresse til udklipsholder
-      if ($pingResult.Address -ne $null) {
-        if ($packetsSent -eq 0) {
-            $pingResult.Address | Set-Clipboard
+        if ($CopyIpToClipboard) {
+        # Copy IP address to clipboard
+            if ($null -ne $pingResult.Address) {
+                if ($packetsSent -eq 0) {
+                    $pingResult.Address | Set-Clipboard
+                }
+                if ($packetsSent -lt 3) {
+                Write-Host "IP-address copied to clipboard" -foregroundcolor yellow
+                }
+            }
         }
-        if ($packetsSent -lt 3) {
-          Write-Host "IP-address copied to clipboard" -foregroundcolor yellow
+        $packetsSent++
+
+        # Update statistics
+        if ($pingResult.Status -eq "Success") {
+            $pingTime = $pingResult.Latency
+            $sumPing += $pingTime
+            if ($null -eq $minPing -or $pingTime -lt $minPing) {
+                $minPing = $pingTime
+            }
+            if ($null -eq $maxPing -or $pingTime -gt $maxPing) {
+                $maxPing = $pingTime
+            }
+        } else {
+            $packetsLost++
         }
-      }
+
+        # Calculate average ping time without [Math]::Round() and with 2 decimal places
+        if ($packetsSent - $packetsLost -gt 0) {
+            $avgPing = $sumPing / ($packetsSent - $packetsLost)
+            $avgPing = "{0:N2}" -f $avgPing # Format to 2 decimal places
+        } else {
+            $avgPing = 0 # Avoid division by zero
+        }
+
+
+        Write-Host "Ping statistics for $($Url):" -ForegroundColor Green
+        Write-Host "Recipient IP: $($pingResult.Address)" -ForegroundColor Gray
+        if ($pingResult.Status -eq "Success") {
+        Write-Host "Pinging - $($pingResult.Latency)ms" -ForegroundColor Green
+        } elseif ($pingResult.Status -eq "TimedOut") {
+        Write-Host "No connection" -ForegroundColor Red
+        } else {
+        Write-Host "Error - $($PingResult.Status)" -ForegroundColor Red
+        }
+        write-host "Started: $($StartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor DarkGray
+        #Write-Host "Time since start: $([int]((Get-Date) - $StartTime).TotalSeconds) seconds"
+        Write-Host "Time since start: $(Compare-DateTime -DateTime1 $StartTime -DateTime2 (Get-Date))"
+        ""
+        Write-Host "Current ping: $($pingResult.Latency) ms"
+        Write-Host "Highest ping: $maxPing ms"
+        Write-Host "Lowest ping: $minPing ms"
+        Write-Host "Average ping: $($avgPing) ms"
+        Write-Host "Packets sent: $packetsSent"
+        Write-Host "Packets lost: $packetsLost"
+
+        # Wait before next ping
+        Start-Sleep -Milliseconds $Interval
     }
-    $packetsSent++
-
-    # Opdater statistikker
-
-    if ($pingResult.Status -eq "Success") {
-      $pingTime = $pingResult.Latency
-      $sumPing += $pingTime
-      if ($minPing -eq $null -or $pingTime -lt $minPing) {
-        $minPing = $pingTime
-      }
-      if ($maxPing -eq $null -or $pingTime -gt $maxPing) {
-        $maxPing = $pingTime
-      }
-    } else {
-      $packetsLost++
-    }
-
-    # Beregn gennemsnitlig ping-tid uden [Math]::Round() og med 2 decimaler
-    if ($packetsSent - $packetsLost -gt 0) {
-        $avgPing = $sumPing / ($packetsSent - $packetsLost)
-        $avgPing = "{0:N2}" -f $avgPing # Formater til 2 decimaler
-    } else {
-        $avgPing = 0 # Undgå division med nul
-    }
-
-
-    Write-Host "Ping statistics for $($Url):" -ForegroundColor Green
-    Write-Host "Recipient IP: $($pingResult.Address)" -ForegroundColor Gray
-    if ($pingResult.Status -eq "Success") {
-      Write-Host "Pinging - $($pingResult.Latency)ms" -ForegroundColor Green
-    } elseif ($pingResult.Status -eq "TimedOut") {
-      Write-Host "No connection" -ForegroundColor Red
-    } else {
-      Write-Host "Error - $($PingResult.Status)" -ForegroundColor Red
-    }
-    write-host "Started: $($StartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor DarkGray
-    #Write-Host "Time since start: $([int]((Get-Date) - $StartTime).TotalSeconds) seconds"
-    Write-Host "Time since start: $(Sammenlign-DatoTid -DatoTid1 $StartTime -DatoTid2 (Get-Date))"
-    ""
-    Write-Host "Current ping: $($pingResult.Latency) ms"
-    Write-Host "Highest ping: $maxPing ms"
-    Write-Host "Lowest ping: $minPing ms"
-    Write-Host "Average ping: $($avgPing) ms"
-    Write-Host "Packets sent: $packetsSent"
-    Write-Host "Packets lost: $packetsLost"
-
-    # Vent før næste ping
-    Start-Sleep -Milliseconds $Interval
-  }
 }
 
 function Test-Numeric ($Value) {
