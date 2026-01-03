@@ -123,6 +123,9 @@ Microsoft Edge 143.0.3650.96  "C:\Program Files (x86)\Microsoft\Edge\Application
 
 - **Get-UserAdGroups** - Retrieves Active Directory group memberships for the current logged-on user.
 ```powershell
+Get-UserAdGroups
+Office Printer
+RDP remote users
 ```
 
 - **Get-Wanip** - Retrieves your public WAN IP address and related information.
