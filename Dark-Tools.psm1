@@ -2357,7 +2357,7 @@ function ProcessingAnimation($scriptBlock) {
 Function Write-ToLog {
     <#
     .SYNOPSIS
-        Writes log entries in RN standard format.
+        Writes log entries in Simple standard format.
     .DESCRIPTION
         Logs messages in simple standardized format with component, timestamp, and thread ID information. Appends to specified log file in UTF-8 encoding.
     .PARAMETER Message

@@ -141,6 +141,14 @@ Country     : Some Country
 CountryCode : Some Country Cide
 ```
 
+- **Import-Ods** - Imports ODS (LibreOffice Calc) files by converting them to XLSX and importing with Import-Excel.
+```powershell
+Import-Ods -FilePath "C:\Temp\calc-sheet.ods"
+# Uses the Import-Excel module
+# And therefor also Support all the parameters from Import-Excel
+Import-Ods -FilePath "C:\Temp\calc-sheet.ods" -WorksheetName "Sheet1" -StartRow 2 -AsText
+```
+
 - **Import-TaskXml** - Imports scheduled tasks from XML definition files.
 ```powershell
 Import-TaskXml -TaskXmlPath C:\temp\SomeTask.xml -TaskName "Wanted Taskname"
@@ -167,6 +175,15 @@ Invoke-CleanupHistory
 Invoke-PauseWithTimeout -message "Wait for 10 seconds" -SleepSeconds 10
 Wait for 10 seconds
 # Waits for 10 seconds or for a keystroke
+```
+
+- **ProcessingAnimation** - Displays an animated spinner while a script block executes
+```powershell
+ProcessingAnimation -scriptBlock {sleep -Seconds 3}
+|
+/
+-
+\
 ```
 
 - **Search-FileContent** - Searches for specific content within files with filtering and recursion options.
@@ -256,13 +273,7 @@ Write-Log -Path "C:\Logs\install.log" -Message "Error occurred" -Component "Setu
 
 - **Write-ToLog** - Writes log entries in RN standard format.
 ```powershell
+Write-ToLog -Message "Backup started" -Component "Backup" -LogFilePath "C:\Logs\backup.log"
 ```
 
-- **ProcessingAnimation** - Displays an animated spinner while a script block executes.
-```powershell
-```
-
-- **Import-Ods** - Imports ODS (LibreOffice Calc) files by converting them to XLSX and importing with Import-Excel.
-```powershell
-```
 
