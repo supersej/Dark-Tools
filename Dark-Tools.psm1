@@ -952,113 +952,6 @@ function Get-ImageInformation {
 }
 #endregion Get-ImageInformation
 
-#region Get-LastUserLogon
-function Get-LastUserLogon {
-    <#
-    .SYNOPSIS
-        Retrieves the last logon time and information for a specific user.
-    .DESCRIPTION
-        Searches Windows Security Event Log for the most recent logon event of a specified user. Requires administrative privileges. Returns logon timestamp, type, and IP address if available. Supports both interactive logons and remote logons.
-    .PARAMETER Username
-        Specifies the username to search for in the Security event log.
-    .PARAMETER WinEvents
-        Optional. Pre-filtered Windows events to search through instead of querying the Security log directly.
-    .OUTPUTS
-        Returns a custom object with TimeCreated, LogonType, User, IPAddress, and RawEvent properties.
-    .EXAMPLE
-        Get-LastUserLogon -Username "john.smith"
-        Returns the last logon information for john.smith user.
-    .EXAMPLE
-        Get-LastUserLogon -Username "admin"
-        Retrieves last logon with interactive logon types (2 and 10) only.
-    .NOTES
-        Requires administrator privileges to read Security event log.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory, Position=0)]
-        [string]$Username,
-
-        [Parameter(Mandatory=$false)]
-        $WinEvents
-    )
-
-    # stop if no admin rights
-    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-        Write-Error "Get-LastUserLogon requires administrative privileges. Please run PowerShell as Administrator."
-        return
-    }
-
-    # Simpel XML-escape der virker i PS7 restricted mode
-    function Escape-Xml {
-        param([string]$s)
-        $s = $s -replace '&','&amp;'
-        $s = $s -replace '<','&lt;'
-        $s = $s -replace '>','&gt;'
-        $s = $s -replace "'","&apos;"
-        $s = $s -replace '"','&quot;'
-        return $s
-    }
-
-    $escapedUser = Escape-Xml $Username
-
-    # Vi vil kun tage interaktive logontyper
-    $logonTypes = @(2,10)
-
-    if (-not $WinEvents) {
-
-        # BREDT filter: søg på ALLE felter der kan indeholde brugernavn
-        # Dette er Garanteret match uanset Windows-version
-        $queryTemplate = @"
-<QueryList>
-  <Query Id="0" Path="Security">
-    <Select Path="Security">
-      *[System[(EventID=4624)]]
-      and
-      *[EventData[
-            Data='$escapedUser'
-         or Data[@Name='TargetUserName']='$escapedUser'
-         or Data[@Name='SubjectUserName']='$escapedUser'
-         or Data[@Name='TargetDomainName']='$escapedUser'
-         or Data[@Name='SubjectDomainName']='$escapedUser'
-      ]]
-    </Select>
-  </Query>
-</QueryList>
-"@
-
-        # Nu får vi ALT hvor brugernavnet optræder — 100% sikker match
-        $WinEvents = Get-WinEvent -FilterXml $queryTemplate
-    }
-
-    foreach ($e in ($WinEvents | Sort-Object TimeCreated -Descending)) {
-
-        $xml = [xml]$e.ToXml()
-
-        $lt = $xml.Event.EventData.Data |
-              Where-Object { $_.Name -eq 'LogonType' } |
-              Select-Object -ExpandProperty '#text'
-
-        if ($lt -notin $logonTypes) { continue }
-
-        # Ekstra sikkerhed
-        $allFields = $xml.Event.EventData.Data.'#text'
-
-        if ($allFields -contains $Username) {
-            return [PSCustomObject]@{
-                TimeCreated = $e.TimeCreated
-                LogonType   = $lt
-                User        = $Username
-                IPAddress   = ($xml.Event.EventData.Data |
-                                Where-Object { $_.Name -eq 'IpAddress' } |
-                                Select-Object -ExpandProperty '#text')
-                RawEvent    = $e
-            }
-        }
-    }
-}
-#endregion Get-LastUserLogon
-
 #region Get-ProcessOwner
 function Get-ProcessOwner {
     <#
@@ -2579,5 +2472,5 @@ Set-Alias -Name Export-Calc -Value Export-Ods
 Set-Alias -Name New-Calc -Value New-Ods
 Set-Alias -Name Update-Calc -Value Update-Ods
 Set-Alias -Name Remove-Calc -Value Remove-Ods
-Set-Alias -Name Clear-History -Value Invoke-CleanupHistory
+#Set-Alias -Name Clear-History -Value Invoke-CleanupHistory
 Set-Alias -Name Pause-WithTimeout -Value Invoke-PauseWithTimeout

@@ -5,3 +5,203 @@ My private collection of usefull Powershell functions
 ## Installation
 ```powershell 7
 Install-Module Dark-Tools
+```
+
+## Update
+```powershell 7
+Update-Module Dark-Tools
+```
+
+## Functions
+
+- **ConvertFrom-CanonicalUser** - Converts canonical user names to Distinguished Name (DN) format for Active Directory queries.
+```powershell
+ConvertFrom-CanonicalUser -CanonicalName "contoso.com/Users/John Doe"
+CN=John Doe,OU=Users,DC=contoso,DC=com
+```
+
+- **ConvertFrom-DistinguishedName** - Converts LDAP Distinguished Names (DN) to canonical name format.
+```powershell
+ConvertFrom-DistinguishedName -DistinguishedName "CN=John Doe,OU=Users,DC=contoso,DC=com"
+contoso.com/Users/John Doe
+```
+
+- **Format-MacAddress** - Cleans and formats MAC address strings with customizable separators, case conversion, and split patterns.
+```powershell
+Format-MacAddress -MacAddress "00:1A:2B:3C:4D:5E" -Separator "-" -Uppercase
+00-1A-2B-3C-4D-5E
+```
+
+- **Convert-SecondsToHumanReadable** - Converts seconds to human-readable time format (days, hours, minutes, seconds).
+```powershell
+Convert-SecondsToHumanReadable -Seconds 93784
+1 days, 2 hours, 3 minutes, 4 seconds
+```
+
+- **Get-ComputerAdGroups** - Retrieves Active Directory group memberships for the current computer.
+```powershell
+Get-ComputerAdGroups
+CN=Office Staff,CN=Users,DC=contoso,DC=com
+CN=IT Support,OU=Groups,DC=contoso,DC=com
+```
+
+- **Get-ExecutableArchitecture** - Determines whether an executable file is 16-bit, 32-bit, or 64-bit.
+```powershell
+Get-ExecutableArchitecture C:\windows\system32\calc.exe
+64-bit
+```
+
+- **Get-FileViaExplorer** - Opens a file browser dialog for interactive file selection with optional filtering.
+```powershell
+Get-FileViaExplorer
+```
+
+- **Get-FolderSize** - Calculates the total size of a folder in megabytes with recursive and filtering options.
+```powershell
+Get-FolderSize -folder "C:\Windows\" -recurse
+C:\Windows\: 24.479,0 MB
+```
+
+- **Get-GithubData** - Retrieves release information from GitHub repositories and optionally downloads assets.
+```powershell
+Get-GithubData -User Microsoft -Repo PowerToys -SkipPreview -LatestVersion
+v0.96.1
+```
+
+- **Get-IconLnkTarget** - Retrieves the target path of Windows shortcut (.lnk) files.
+```powershell
+ Get-IconLnkTarget -lnk "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\LibreOffice\LibreOffice Calc.lnk"
+C:\Program Files\LibreOffice\program\scalc.exe
+```
+
+- **Get-ImageInformation** - Retrieves image properties using Windows Image Acquisition (WIA) API.
+```powershell
+Get-ImageInformation -Filepath "C:\Windows\Wallpapers\super_resolution\computer_keyboard_higher_res.jpg" | Select-Object Height, Width, PixelDepth
+
+Height Width PixelDepth
+------ ----- ----------
+  3375  6000         24
+```
+
+- **Get-LastUserLogon** - Retrieves the last logon time and details for a specific user from Security event log.
+***Removed due to poor default retention time in Windows EventLog***
+
+- **Get-ProcessOwner** - Retrieves the owner/user account of running processes by name.
+```powershell
+Get-ProcessOwner -ProcessName pwsh
+
+ProcessName ProcessId Owner
+----------- --------- -----
+pwsh            44892 john
+```
+```powershell
+Get-Process pwsh | Get-ProcessOwner
+
+ProcessName ProcessId Owner
+----------- --------- -----
+pwsh             2672 dark
+pwsh            13400 dark
+```
+
+- **Set-ScheduledTaskMSA** - Configures scheduled tasks to run under Managed Service Accounts (MSA).
+```powershell
+Set-ScheduledTaskMSA -TaskName "Cleanup" -TaskPath "\\" -MSAName admin_MSA$ -RunWithHighestPrivileges
+```
+
+- **Get-Software** - Retrieves installed software from Windows registry with filtering options.
+```powershell
+Get-Software "Microsoft Edge" | Select-Object DisplayName, DisplayVersion, UninstallString
+
+DisplayName    DisplayVersion UninstallString
+-----------    -------------- ---------------
+Microsoft Edge 143.0.3650.96  "C:\Program Files (x86)\Microsoft\Edge\Application\143.0.3650.96\Installer\setup.exe" --uninstall --msedge --channel=stable --system-level --verbose-logging
+```
+
+- **Get-RegistryUninstallKey** - Searches for uninstall registry keys matching a search pattern.
+```powershell
+```
+
+- **Get-UserAdGroups** - Retrieves Active Directory group memberships for the current logged-on user.
+```powershell
+```
+
+- **Get-Wanip** - Retrieves your public WAN IP address and related information.
+```powershell
+```
+
+- **Import-TaskXml** - Imports scheduled tasks from XML definition files.
+```powershell
+```
+
+- **Install-Chocolatey** - Installs or detects Chocolatey package manager.
+```powershell
+```
+
+- **Install-Notion** - Installs Notion application using Winget.
+```powershell
+```
+
+- **Invoke-CleanupHistory** - Cleans Windows Recent files and clipboard history.
+```powershell
+```
+
+- **Invoke-PauseWithTimeout** - Pauses script execution with timeout and keystroke detection.
+```powershell
+```
+
+- **Search-FileContent** - Searches for specific content within files with filtering and recursion options.
+```powershell
+```
+
+- **Show-Calendar** - Displays a visual calendar with optional date highlighting.
+```powershell
+```
+
+- **Test-NetConnectionContinuous** - Continuously pings a URL with live statistics display.
+```powershell
+```
+
+- **Test-Numeric** - Tests if a value is numeric.
+```powershell
+```
+
+- **Test-PendingReboot** - Checks whether a Windows system requires a reboot.
+```powershell
+```
+
+- **Test-SoftwareSources** - Checks for invalid software source paths in registry.
+```powershell
+```
+
+- **Update-Notion** - Updates Notion application to the latest version.
+```powershell
+```
+
+- **Watch-FileChange** - Monitors a file for changes and alerts on modification.
+```powershell
+```
+
+- **Write-CheckFailed** - Writes a failure indicator (✗) to console.
+```powershell
+```
+
+- **Write-CheckSucces** - Writes a success indicator (✓) to console.
+```powershell
+```
+
+- **Write-Log** - Logs messages in SCCM-style format with component, timestamp, and severity level.
+```powershell
+```
+
+- **Write-ToLog** - Writes log entries in RN standard format.
+```powershell
+```
+
+- **ProcessingAnimation** - Displays an animated spinner while a script block executes.
+```powershell
+```
+
+- **Import-Ods** - Imports ODS (LibreOffice Calc) files by converting them to XLSX and importing with Import-Excel.
+```powershell
+```
+
