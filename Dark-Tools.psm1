@@ -156,17 +156,17 @@ function Format-MacAddress {
         [Parameter(Position=0, HelpMessage='Please enter a MAC address (12 hex)', Mandatory, ValueFromPipeline)]
         [Alias('Address')]
         [String[]] $MacAddress,
-        
+
         [ValidateSet(':', 'None', '.', '-', ' ', 'Space', ';')]
         [Alias('Delimiter')]
         [string] $Separator = ':',
-        
+
         [ValidateSet('Ignore', 'Upper', 'Uppercase', 'Lower', 'Lowercase')]
         [string] $Case = 'Lower',
-        
+
         [ValidateSet(2,3,4,6)]
         [int] $Split = 2,
-        
+
         [switch] $IncludeOriginal
     )
     #endregion Parameter
@@ -364,17 +364,17 @@ function Format-MacAddress {
         [Parameter(Position=0, HelpMessage='Please enter a MAC address (12 hex)', Mandatory, ValueFromPipeline)]
         [Alias('Address')]
         [String[]] $MacAddress,
-        
+
         [ValidateSet(':', 'None', '.', '-', ' ', 'Space', ';')]
         [Alias('Delimiter')]
         [string] $Separator = ':',
-        
+
         [ValidateSet('Ignore', 'Upper', 'Uppercase', 'Lower', 'Lowercase')]
         [string] $Case = 'Lower',
-        
+
         [ValidateSet(2,3,4,6)]
         [int] $Split = 2,
-        
+
         [switch] $IncludeOriginal
     )
     #endregion Parameter
@@ -629,7 +629,7 @@ function Get-FileViaExplorer {
 
         # Return the selected file(s) based on whether multiple file selection is enabled
         if ($FileBrowser.Multiselect) {
-            return $FileBrowser.FileNames    
+            return $FileBrowser.FileNames
         } else {
             return $FileBrowser.FileName
         }
@@ -687,7 +687,7 @@ function Get-FolderSize {
 
     process {
         $items = Get-ChildItem $folder -Recurse:$recurse -File -ErrorAction SilentlyContinue
-        
+
         if (-not $includeOnlineFiles) {
             $items = $items | Where-Object { -not ($_.Attributes -like '*Offline*') }
         }
@@ -1141,14 +1141,14 @@ function Get-Software {
         [Parameter(Mandatory = $false, HelpMessage="How to uninstall", ValueFromPipeline = $true)]
         $UninstallationPath='*'
     )
-    
+
     $UninstallationPaths = @(
         "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "Registry::HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "Registry::HKEY_CURRENT_USER\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     )
-    
+
     $ResultArray = Get-ItemProperty -Path $UninstallationPaths | ForEach-Object {
         # Omdan PSPath til de ønskede formater
         $regPath = ($_.PSPath -replace '^Microsoft\.PowerShell\.Core\\Registry::', '')
@@ -1166,10 +1166,10 @@ function Get-Software {
     }
 
     $FilteredResults = $ResultArray | Where-Object {
-        $_.DisplayName -and 
-        $_.DisplayName -like $DisplayName -and 
-        $_.DisplayVersion -like $Version -and 
-        $_.UninstallString -like $UninstallationPath -and 
+        $_.DisplayName -and
+        $_.DisplayName -like $DisplayName -and
+        $_.DisplayVersion -like $Version -and
+        $_.UninstallString -like $UninstallationPath -and
         $_.InstallDate -like $InstallationDate
     }
 
@@ -1207,14 +1207,13 @@ $registryPaths = @(
 
 foreach ($reg in $registryPaths) {
     $keys = Get-ChildItem $reg.Path -ErrorAction SilentlyContinue
-    
+
     $keys | ForEach-Object {
         $obj = New-Object psobject
         Add-Member -InputObject $obj -MemberType NoteProperty -Name GUID -Value $_.PSChildName
         Add-Member -InputObject $obj -MemberType NoteProperty -Name DisplayName -Value $_.GetValue("DisplayName")
         Add-Member -InputObject $obj -MemberType NoteProperty -Name DisplayVersion -Value $_.GetValue("DisplayVersion")
         Add-Member -InputObject $obj -MemberType NoteProperty -Name UninstallString -Value $_.GetValue("UninstallString")
-        
         $installDate = $_.GetValue("InstallDate")
         if ($installDate -match '^(\d{4})(\d{2})(\d{2})$') {
             $installDate = [datetime]::ParseExact($installDate, 'yyyyMMdd', $null)
@@ -1222,12 +1221,9 @@ foreach ($reg in $registryPaths) {
             $installDate = $null
         }
         Add-Member -InputObject $obj -MemberType NoteProperty -Name InstallDate -Value $installDate
-        
         Add-Member -InputObject $obj -MemberType NoteProperty -Name FullPath -Value "registry::$_"
         Add-Member -InputObject $obj -MemberType NoteProperty -Name isWow6432Node -Value ([switch]$reg.isWow6432Node)
-        
         $obj.FullPath = $obj.FullPath -replace "\[", "``[" -replace "\]", "``]"
-        
         $results += $obj
     }
 }
@@ -1472,7 +1468,7 @@ function Invoke-CleanupHistory {
         $count--
         Start-Sleep -seconds 1
     }
-    Clear-Host    
+    Clear-Host
 }
 #endregion Invoke-CleanupHistory
 
@@ -1500,7 +1496,7 @@ function Invoke-PauseWithTimeout {
     $timeout = New-TimeSpan -Seconds $sleepSeconds
     $stopWatch = [Diagnostics.Stopwatch]::StartNew()
 
-    write-host $message
+    write-Output $message
 
     while ($stopWatch.Elapsed -lt $timeout)
     {
@@ -1561,16 +1557,16 @@ function Search-FileContent {
 
     foreach ($file in $files) {
         try {
-            $matches = Select-String -Path $file.FullName -Pattern $Content -SimpleMatch -ErrorAction Stop
+            $results = Select-String -Path $file.FullName -Pattern $Content -SimpleMatch -ErrorAction Stop
 
-            if ($matches) {
+            if ($results) {
                 if ($HideContent) {
                     Write-Host $file.FullName -ForegroundColor Green
                 }
                 else {
                     Write-Host "In: $($file.FullName)" -ForegroundColor Cyan
-                    foreach ($match in $matches) {
-                        Write-Host ("  Line {0}: {1}" -f $match.LineNumber, $match.Line)
+                    foreach ($match in $results) {
+                        Write-Output ("  Line {0}: {1}" -f $match.LineNumber, $match.Line)
                     }
                 }
             }
@@ -1763,27 +1759,27 @@ function Test-NetConnectionContinuous {
     param(
       [Parameter(Mandatory = $true)]
       [datetime]$DateTime1,
-  
+
       [Parameter(Mandatory = $true)]
       [datetime]$DateTime2
     )
-  
+
     $TimeDifference = New-TimeSpan -Start $DateTime1 -End $DateTime2
-  
+
     $Days = $TimeDifference.Days
     $Hours = $TimeDifference.Hours
     $Minutes = $TimeDifference.Minutes
     $Seconds = $TimeDifference.Seconds
-  
+
     $Resultat = ""
-  
+
     if ($Days -gt 0) {
       $Resultat += "$Days day"
       if ($Days -gt 1) {
         $Resultat += "s"
       }
     }
-  
+
     if ($Hours -gt 0) {
       if ($Resultat -ne "") {
         $Resultat += ", "
@@ -1793,7 +1789,7 @@ function Test-NetConnectionContinuous {
         $Resultat += "s"
       }
     }
-  
+
     if ($Minutes -gt 0) {
       if ($Resultat -ne "") {
         $Resultat += ", "
@@ -1803,7 +1799,7 @@ function Test-NetConnectionContinuous {
         $Resultat += "s"
       }
     }
-  
+
     if ($Seconds -gt 0) {
       if ($Resultat -ne "") {
         $Resultat += " and "
@@ -1813,11 +1809,11 @@ function Test-NetConnectionContinuous {
         $Resultat += "s"
       }
     }
-  
+
     return $Resultat
     }
     #endregion
-  
+
     # Initialization of variables
     $minPing = $null
     $maxPing = $null
@@ -1879,15 +1875,15 @@ function Test-NetConnectionContinuous {
         Write-Host "Error - $($PingResult.Status)" -ForegroundColor Red
         }
         write-host "Started: $($StartTime.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor DarkGray
-        #Write-Host "Time since start: $([int]((Get-Date) - $StartTime).TotalSeconds) seconds"
-        Write-Host "Time since start: $(Compare-DateTime -DateTime1 $StartTime -DateTime2 (Get-Date))"
+        #Write-Output "Time since start: $([int]((Get-Date) - $StartTime).TotalSeconds) seconds"
+        Write-Output "Time since start: $(Compare-DateTime -DateTime1 $StartTime -DateTime2 (Get-Date))"
         ""
-        Write-Host "Current ping: $($pingResult.Latency) ms"
-        Write-Host "Highest ping: $maxPing ms"
-        Write-Host "Lowest ping: $minPing ms"
-        Write-Host "Average ping: $($avgPing) ms"
-        Write-Host "Packets sent: $packetsSent"
-        Write-Host "Packets lost: $packetsLost"
+        Write-Output "Current ping: $($pingResult.Latency) ms"
+        Write-Output "Highest ping: $maxPing ms"
+        Write-Output "Lowest ping: $minPing ms"
+        Write-Output "Average ping: $($avgPing) ms"
+        Write-Output "Packets sent: $packetsSent"
+        Write-Output "Packets lost: $packetsLost"
 
         # Wait before next ping
         Start-Sleep -Milliseconds $Interval
@@ -2064,37 +2060,62 @@ function Test-SoftwareSources {
 
 #region Update-Notion
 function Update-Notion {
-    <#
-    .SYNOPSIS
-        Updates Notion application to the latest version.
-    .DESCRIPTION
-        Upgrades Notion using Winget package manager. Automatically closes any running Notion instances before upgrading.
-    .OUTPUTS
-        Displays upgrade status messages.
-    .EXAMPLE
-        Update-Notion
-        Upgrades Notion to the latest version.
-    #>
-    # Check if Winget is installed
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Error "Winget is not installed. Please install Winget to proceed."
+<#
+.SYNOPSIS
+    Update Notion to latest version
+.DESCRIPTION
+    Upgrade Notion either by Winget (standard) or by direct download,
+    if -DirectDownload is used. Running Notion-processes is closed automatically.
+.PARAMETER DirectDownload
+    Download and install Notion directly from  Notions official download-URL.
+.EXAMPLE
+    Update-Notion
+.EXAMPLE
+    Update-Notion -DirectDownload
+#>
+
+    param (
+        [switch]$DirectDownload
+    )
+
+    # Close running Notion
+    if (Get-Process -Name "Notion" -ErrorAction SilentlyContinue) {
+        Write-Output "Notion running. Closing Notion."
+        Stop-Process -Name "Notion" -Force
+    }
+
+    if ($DirectDownload) {
+        $DownloadUrl = 'https://www.notion.com/desktop/windows/download?pathname=%2Fdesktop'
+        $TempInstaller = Join-Path $env:TEMP 'NotionSetup.exe'
+
+        Write-Output "Downloading Notion directly from URL..."
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempInstaller -UseBasicParsing
+
+        Write-Output "Upgrading Notion..."
+        Start-Process -FilePath $TempInstaller -ArgumentList '/S' -Wait
+
+        Remove-Item $TempInstaller -Force
+        Write-Output "Notion upgrade completed (DirectDownload)."
         return
     }
-    # Check if Notion is already installed
-    $notion_installed = winget list --name "Notion" | Select-String "Notion"
-    if ($notion_installed) {
-        # Upgrade Notion using Winget
-        if (Get-Process -Name "Notion" -ErrorAction SilentlyContinue) {
-            Write-Output "Notion is currently running. Closing Notion."
-            Stop-Process -Name "Notion" -Force
-        }
-        Write-Output "Upgrade Notion..."
-        winget upgrade --id=Notion.Notion -e --source=winget --override "/S /D=""C:\Program Files\Notion"""
-        Write-Output "Notion installation completed."
-    } else {
-        Write-Output "Notion is not installed. Nothing to upgrade. Please install Notion first."
+
+    # Winget-flow (standard)
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Error "Winget is not installed. Please install Winget or use -DirectDownload."
+        return
     }
+
+    $NotionInstalled = winget list --id Notion.Notion 2>$null | Select-String 'Notion'
+    if (-not $NotionInstalled) {
+        Write-Output "Notion is not installed. Nothing to upgrade."
+        return
+    }
+
+    Write-Output "Upgrading Notion via Winget..."
+    winget upgrade --id Notion.Notion -e --source winget --silent
+    Write-Output "Notion installation completed."
 }
+
 #endregion Update-Notion
 
 #region Watch-FileChange
@@ -2115,8 +2136,8 @@ function Watch-FileChange {
         $Path
     )
 
-    Write-Host "Monitoring file: $Path"
-    Write-Host "Press Ctrl+C to stop."
+    Write-Output "Monitoring file: $Path"
+    Write-Output "Press Ctrl+C to stop."
 
     # Get initial timestamp
     $lastWrite = (Get-Item $Path).LastWriteTime
@@ -2127,11 +2148,11 @@ function Watch-FileChange {
         if ($currentWrite -ne $lastWrite) {
             $lastWrite = $currentWrite
 
-            Write-Host ""
+            Write-Output ""
             Write-Host "==========================================" -ForegroundColor Yellow
             Write-Host " FILE CHANGED: $($lastWrite)" -ForegroundColor Green
             Write-Host "==========================================" -ForegroundColor Yellow
-            Write-Host ""
+            Write-Output ""
 
             Read-Host "Press Enter to continue monitoring..."
         }
@@ -2161,7 +2182,7 @@ Function Write-CheckFailed {
         [string]$Text
     )
     if ($null -ne $Text) {
-        Write-Host -NoNewline "$Text "
+        Write-Output -NoNewline "$Text "
     }
     Write-Host ([char]0x2717) -ForegroundColor Red # Unicode for cross mark
 }
@@ -2187,7 +2208,7 @@ Function Write-CheckSucces {
         [string]$Text
     )
     if ($null -ne $Text) {
-        Write-Host -NoNewline "$Text "
+        Write-Output -NoNewline "$Text "
     }
     Write-Host ([char]0x2713) -ForegroundColor Green # Unicode for check mark
 }
@@ -2222,13 +2243,13 @@ function Write-Log {
     # This log function is made to log installation and script events in a standardized way.
     # It logs in a .log file in a manner similar to SCCM (or at least very close to it)
 
-    # It also allows simultaneous output of the same message, 
+    # It also allows simultaneous output of the same message,
     # either as write-host, write-output, or write-verbose, as well as silent (none)
     # This way, you don't have to write 2 or more lines, one for the log and one/more for write-xxx
 
     #WARNING - There may be issues with add-content not being able to write to the log file - Try/catch does not seem to catch this...
 
-    # Currently there is SilentlyContinue - So there is no logging on write errors. 
+    # Currently there is SilentlyContinue - So there is no logging on write errors.
 	# But if OutputFormat = Host|Output then output from write-log is still displayed on the screen
     [CmdletBinding()]
     Param(
@@ -2349,7 +2370,7 @@ function ProcessingAnimation($scriptBlock) {
 	[Console]::SetCursorPosition(0, $cursorTop)
 	[Console]::CursorVisible = $true
 	}
-    # ProcessingAnimation { Start-Sleep 5 } 
+    # ProcessingAnimation { Start-Sleep 5 }
 }
 #endregion ProcessingAnimation
 
