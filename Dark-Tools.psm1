@@ -2406,6 +2406,78 @@ Function Write-ToLog {
 }
 #endregion Write-ToLog
 
+#region Watch-Network
+function Watch-Network {
+    param (
+        [int]$IntervalSeconds = 1,
+        [int]$SampleMs       = 500
+    )
+
+    $adapters  = Get-NetAdapter | Where-Object Status -eq 'Up'
+    $nameWidth = ($adapters.Name | Measure-Object -Property Length -Maximum).Maximum
+    $nameWidth = [Math]::Max($nameWidth, 10)
+
+    $fixedLines = 3 + $adapters.Count
+    Write-Host ("`n" * $fixedLines) -NoNewline
+
+    try {
+        while ($true) {
+
+            $before   = Get-NetAdapterStatistics
+            Start-Sleep -Milliseconds $SampleMs
+            $after    = Get-NetAdapterStatistics
+            $tcpCount = (Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue).Count
+
+            $afterMap = @{}
+            foreach ($s in $after) { $afterMap[$s.Name] = $s }
+
+            $factor = 1000 / $SampleMs
+
+            Write-Host -NoNewline "`e[$($fixedLines)A"
+
+            $ts = Get-Date -Format 'HH:mm:ss'
+            Write-Host "`e[2K`e[36m=== Netværk  $ts  TCP: $tcpCount`e[0m"
+            Write-Host "`e[2K$('-' * ($nameWidth + 38))"
+
+            foreach ($adp in $adapters) {
+                $b = $before | Where-Object Name -eq $adp.Name
+                $a = $afterMap[$adp.Name]
+
+                if ($b -and $a) {
+                    $rx = Format-Bytes (($a.ReceivedBytes - $b.ReceivedBytes) * $factor)
+                    $tx = Format-Bytes (($a.SentBytes     - $b.SentBytes)     * $factor)
+                } else {
+                    $rx = $tx = "N/A"
+                }
+
+                Write-Host ("`e[2K{0,-$nameWidth}  `e[32mRX {1,10}/s`e[0m   `e[33mTX {2,10}/s`e[0m" -f $adp.Name, $rx, $tx)
+            }
+
+            Write-Host "`e[2KTryk Ctrl+C for at stoppe"
+
+            Start-Sleep -Milliseconds ([Math]::Max(0, $IntervalSeconds * 1000 - $SampleMs))
+        }
+    }
+    finally {
+        Write-Host ""
+    }
+}
+#endregion Watch-Network
+
+#region Format-Bytes
+# used in Watch-Network
+function Format-Bytes([double]$bytes) {
+    switch ($bytes) {
+        { $_ -ge 1GB } { return "{0:N1} GB" -f ($_ / 1GB); break }
+        { $_ -ge 1MB } { return "{0:N1} MB" -f ($_ / 1MB); break }
+        { $_ -ge 1KB } { return "{0:N1} KB" -f ($_ / 1KB); break }
+        default        { return "{0:N0} B"  -f $_ }
+    }
+}
+#endregion Format-Bytes
+
+
+#region Import-Ods
 function Import-Ods {
     [CmdletBinding()]
     param (
@@ -2486,6 +2558,8 @@ function Import-Ods {
         }
     }
 }
+#endregion Import-Ods
+
 
 
 Set-Alias -Name Import-Calc -Value Import-Ods
