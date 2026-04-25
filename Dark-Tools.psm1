@@ -2436,7 +2436,7 @@ function Watch-Network {
             Write-Host -NoNewline "`e[$($fixedLines)A"
 
             $ts = Get-Date -Format 'HH:mm:ss'
-            Write-Host "`e[2K`e[36m=== Netværk  $ts  TCP: $tcpCount`e[0m"
+            Write-Host "`e[2K`e[36m=== Network  $ts  TCP: $tcpCount`e[0m"
             Write-Host "`e[2K$('-' * ($nameWidth + 38))"
 
             foreach ($adp in $adapters) {
@@ -2453,7 +2453,7 @@ function Watch-Network {
                 Write-Host ("`e[2K{0,-$nameWidth}  `e[32mRX {1,10}/s`e[0m   `e[33mTX {2,10}/s`e[0m" -f $adp.Name, $rx, $tx)
             }
 
-            Write-Host "`e[2KTryk Ctrl+C for at stoppe"
+            Write-Host "`e[2KPress Ctrl+C to stop."
 
             Start-Sleep -Milliseconds ([Math]::Max(0, $IntervalSeconds * 1000 - $SampleMs))
         }

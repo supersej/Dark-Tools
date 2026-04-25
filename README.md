@@ -4,12 +4,17 @@
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
-My private collection of usefull Powershell functions
+My private collection of usefull Powershell functions for Powershell 7
 
 
 ## Installation
 ```powershell 7
 Install-Module Dark-Tools
+```
+
+## Installation - System wide
+```powershell 7
+Install-Module Dark-Tools -Scope AllUsers
 ```
 
 ## Update
@@ -257,6 +262,16 @@ Press Ctrl+C to stop.
 ==========================================
 
 Press Enter to continue monitoring...:
+```
+
+- **Watch-Network** - Show continuous network information in your shell
+```powershell
+Watch-Network
+=== Network  12:25:25  TCP: 88
+----------------------------------------------------------------
+Ethernet (Default Switch)   RX     2,0 KB/s   TX     6,4 KB/s
+Ethernet 2                  RX        0 B/s   TX        0 B/s
+Press Ctrl+C to stop.
 ```
 
 - **Write-CheckFailed** - Writes a failure indicator (✗) to console.
