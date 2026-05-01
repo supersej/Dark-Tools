@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -185,6 +185,11 @@ Invoke-CleanupHistory
 Invoke-PauseWithTimeout -message "Wait for 10 seconds" -SleepSeconds 10
 Wait for 10 seconds
 # Waits for 10 seconds or for a keystroke
+```
+
+- **Invoke-PauseWithTimeout** - Show a graphical dialog asking the user if the computer should be set into standby.
+```powershell
+Invoke-StandbyPrompt -ShowLockButton
 ```
 
 - **ProcessingAnimation** - Displays an animated spinner while a script block executes

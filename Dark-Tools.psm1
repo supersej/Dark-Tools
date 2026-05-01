@@ -1509,6 +1509,262 @@ function Invoke-PauseWithTimeout {
 }
 #endregion Invoke-PauseWithTimeout
 
+
+
+#region Invoke-StandbyPrompt
+function Invoke-StandbyPrompt {
+    <#
+    .SYNOPSIS
+        Show a graphical dialog asking the user if the computer should be set into standby.
+    .DESCRIPTION
+        Using WPF to show a clean yes/no dialog. Language is detected automatically
+        from Windows UI-culture (da-DK = danish, anything else = english).
+    .EXAMPLE
+        Invoke-StandbyPrompt
+    .EXAMPLE
+        Invoke-StandbyPrompt -Language 'da'
+    .EXAMPLE
+        Invoke-StandbyPrompt -ShowLockButton
+    #>
+    [CmdletBinding()]
+    param(
+        # Force language: 'da' or 'en'. Not set = auto-detecting from Windows.
+        [ValidateSet('da', 'en')]
+        [string]$Language,
+
+        # Show an extra button to lock the computer.
+        [switch]$ShowLockButton
+    )
+
+    # --- Load WPF assemblies ---
+    Add-Type -AssemblyName PresentationFramework
+    Add-Type -AssemblyName PresentationCore
+
+
+    # --- Language-detection ---
+    if (-not $Language) {
+        $uiCulture = [System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName
+        $Language  = if ($uiCulture -eq 'da') { 'da' } else { 'en' }
+    }
+
+    # --- Specific language definitions
+    $strings = @{
+        da = @{
+            AppTitle = 'Strømstyring'
+            Heading  = 'Sæt computeren i standby?'
+            SubText  = 'Alle åbne programmer gemmes i hukommelsen.'
+            BtnYes   = 'Ja, standby'
+            BtnNo    = 'Nej tak'
+            BtnLock  = 'Lås skærm'
+        }
+        en = @{
+            AppTitle = 'Power Management'
+            Heading  = 'Put the computer to sleep?'
+            SubText  = 'All open programs will be saved in memory.'
+            BtnYes   = 'Yes, sleep'
+            BtnNo    = 'No thanks'
+            BtnLock  = 'Lock screen'
+        }
+    }
+
+    $t = $strings[$Language]
+
+    [xml]$xaml = @"
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Standby"
+    Width="380" Height="260"
+    WindowStartupLocation="CenterScreen"
+    ResizeMode="NoResize"
+    WindowStyle="None"
+    AllowsTransparency="True"
+    Background="Transparent">
+
+    <Window.Resources>
+        <Style x:Key="BtnYes" TargetType="Button">
+            <Setter Property="Background" Value="#1a73e8"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Width" Value="120"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6" BorderThickness="0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#1558b0"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#0d47a1"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BtnNo" TargetType="Button">
+            <Setter Property="Background" Value="#f1f3f4"/>
+            <Setter Property="Foreground" Value="#3c4043"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Width" Value="100"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6" BorderThickness="0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#e2e4e7"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#d0d3d7"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="BtnLock" TargetType="Button">
+            <Setter Property="Background" Value="#f8f0ff"/>
+            <Setter Property="Foreground" Value="#6a0dad"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Width" Value="110"/>
+            <Setter Property="Height" Value="38"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Visibility" Value="Collapsed"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6" BorderThickness="0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#edd9ff"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#dbb8ff"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border CornerRadius="12" Background="#ffffff"
+            BorderBrush="#e0e0e0" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="30" ShadowDepth="6" Opacity="0.15" Color="#000000"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" CornerRadius="12,12,0,0" Background="#fafafa"
+                    BorderBrush="#eeeeee" BorderThickness="0,0,0,1"
+                    x:Name="DragBar">
+                <StackPanel Orientation="Horizontal" Margin="20,14">
+                    <Ellipse Width="10" Height="10" Fill="#4a90d9" Margin="0,0,6,0" Opacity="0.8"/>
+                    <TextBlock x:Name="TxtAppTitle" FontFamily="Segoe UI" FontSize="12"
+                               Foreground="#888888" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
+            <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Margin="32,24,32,16">
+                <TextBlock Text="&#x1F319;" FontSize="32" HorizontalAlignment="Center" Margin="0,0,0,14"/>
+                <TextBlock x:Name="TxtHeading"
+                           FontFamily="Segoe UI" FontSize="15" FontWeight="Medium"
+                           Foreground="#202124" HorizontalAlignment="Center"
+                           TextWrapping="Wrap" TextAlignment="Center"/>
+                <TextBlock x:Name="TxtSubText"
+                           FontFamily="Segoe UI" FontSize="12"
+                           Foreground="#80868b" HorizontalAlignment="Center"
+                           TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0"/>
+            </StackPanel>
+
+            <StackPanel Grid.Row="2" Orientation="Horizontal"
+                        HorizontalAlignment="Right" Margin="0,0,24,24">
+                <Button x:Name="BtnNo"   Style="{StaticResource BtnNo}"   Margin="0,0,10,0"/>
+                <Button x:Name="BtnLock" Style="{StaticResource BtnLock}" Margin="0,0,10,0"/>
+                <Button x:Name="BtnYes"  Style="{StaticResource BtnYes}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
+"@
+
+    $reader = [System.Xml.XmlNodeReader]::new($xaml)
+    $window = [Windows.Markup.XamlReader]::Load($reader)
+
+    # Insert localized texts
+    $window.FindName('TxtAppTitle').Text = $t.AppTitle
+    $window.FindName('TxtHeading').Text  = $t.Heading
+    $window.FindName('TxtSubText').Text  = $t.SubText
+    $window.FindName('BtnYes').Content   = $t.BtnYes
+    $window.FindName('BtnNo').Content    = $t.BtnNo
+    $window.FindName('BtnLock').Content  = $t.BtnLock
+
+    # Show lock-button if -ShowLockButton is set
+    if ($ShowLockButton) {
+        $window.FindName('BtnLock').Visibility = [System.Windows.Visibility]::Visible
+    }
+
+    $window.FindName('DragBar').add_MouseLeftButtonDown({
+        $window.DragMove()
+    })
+
+    $window.FindName('BtnLock').add_Click({
+        $window.Tag = 'Lock'
+        $window.Close()
+    })
+
+    $window.FindName('BtnYes').add_Click({
+        $window.Tag = 'Yes'
+        $window.Close()
+    })
+
+    $window.FindName('BtnNo').add_Click({
+        $window.Tag = 'No'
+        $window.Close()
+    })
+
+    $window.add_KeyDown({
+        param($s, $e)
+        if ($e.Key -eq 'Escape') { $window.Close() }
+    })
+
+    $window.ShowDialog() | Out-Null
+
+    if ($window.Tag -eq 'Yes') {
+        rundll32.exe powrprof.dll, SetSuspendState 0, 1, 0
+    }
+    elseif ($window.Tag -eq 'Lock') {
+        rundll32.exe user32.dll, LockWorkStation
+    }
+}
+#endregion Invoke-StandbyPrompt
+
 #region Search-FileContent
 function Search-FileContent {
     <#
