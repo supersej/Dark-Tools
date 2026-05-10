@@ -1028,6 +1028,308 @@ function Get-ProcessOwner {
 }
 #endregion Get-ProcessOwner
 
+#region Find-MSIBrokenSources
+function Find-MSIBrokenSources {
+    <#
+    .SYNOPSIS
+        Finds MSI products with broken source paths in HKCR\Installer\Products.
+
+    .DESCRIPTION
+        Traverses HKEY_CLASSES_ROOT\Installer\Products using the .NET RegistryKey API
+        (avoids HKCR PSDrive mounting issues) and checks the following source locations
+        for each installed product:
+
+          - SourceList\LastUsedSource   Value format: n;1;C:\path\to\source\
+          - SourceList\Net\*            Direct local or UNC path values
+          - SourceList\Media\*          Only checked when the value resembles a path
+
+        Any reference pointing to a path that no longer exists is reported.
+        Stale source references cause MSI-based updates and repairs to fail, but in
+        most cases they can safely be removed before re-running the installer.
+
+        Output language is detected automatically from the system UI culture
+        (Get-UICulture). Danish is used for da-DK, English for all other locales.
+
+    .PARAMETER ProductName
+        Filters results by product name. Supports wildcards, e.g. "TeamView*" or
+        "*Office*". Comparison is case-insensitive. Omitting the parameter scans
+        all installed products.
+
+    .PARAMETER Fix
+        Deletes the registry values identified as broken. Supports -WhatIf and
+        -Confirm to control behaviour before committing changes.
+
+    .PARAMETER PassThru
+        Returns the result objects to the pipeline even when -Fix is specified.
+        Without -Fix, results are always returned.
+
+    .OUTPUTS
+        PSCustomObject with the following properties:
+          GUID        - Packed product GUID from HKCR\Installer\Products
+          ProductName - Display name of the MSI product
+          SourceType  - LastUsedSource, Net, or Media
+          ValueName   - Registry value name containing the broken path
+          BrokenPath  - The path that no longer exists
+          RegSubKey   - Registry sub-key path (relative to HKCR) for use with -Fix
+
+    .EXAMPLE
+        Find-MSIBrokenSources
+
+        Scans all installed products and lists any broken source references.
+
+    .EXAMPLE
+        Find-MSIBrokenSources -ProductName "TeamView*"
+
+        Scans only products whose name matches "TeamView*".
+
+    .EXAMPLE
+        Find-MSIBrokenSources -ProductName "TeamView*" -WhatIf
+
+        Shows which registry values would be deleted without making any changes.
+
+    .EXAMPLE
+        Find-MSIBrokenSources -ProductName "TeamView*" -Fix
+
+        Deletes broken source references for TeamViewer products, prompting for
+        confirmation before each deletion.
+
+    .EXAMPLE
+        Find-MSIBrokenSources -ProductName "TeamView*" -Fix -Confirm:$false
+
+        Deletes broken source references for TeamViewer products without prompting.
+
+    .EXAMPLE
+        Find-MSIBrokenSources -PassThru | Where-Object SourceType -eq 'Net'
+
+        Returns all broken Net source references as objects for further processing.
+
+    .NOTES
+        Requires administrator privileges to access HKEY_CLASSES_ROOT.
+        Always run with -WhatIf first to review what will be deleted.
+        Tested on Windows 10/11 and Windows Server 2019/2022.
+    #>
+
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
+    param(
+        [Parameter()]
+        [SupportsWildcards()]
+        [string]$ProductName = '*',
+
+        [switch]$Fix,
+        [switch]$PassThru
+    )
+
+    $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw 'Find-MSIBrokenSources requires administrator privileges. Re-run from an elevated session.'
+    }
+
+    #region — Localised strings (i18n)
+    $danish = (Get-UICulture).Name -like 'da*'
+
+    $msg = if ($danish) {
+        @{
+            OpenFail        = 'Kunne ikke åbne HKEY_CLASSES_ROOT: {0}'
+            NoProductsKey   = 'Kan ikke finde HKCR\Installer\Products — kør som administrator.'
+            Traversing      = 'Gennemgår {0} produkter i HKCR\Installer\Products — filter: ''{1}'''
+            BrokenCount     = 'Fandt {0} brudte kildereferencer.'
+            NoneFound       = 'Ingen brudte MSI-kildereferencer fundet.'
+            ShouldProcess   = 'Slet registreringsværdi'
+            Deleted         = '  SLETTET       : {0}'
+            AccessDenied    = '  ADGANG NÆGTET : Kunne ikke åbne {0} med skriveadgang.'
+            DeleteError     = '  FEJL          : {0} — {1}'
+            Summary         = 'Færdig.  Slettet: {0}  |  Fejl/Sprunget over: {1}'
+            Unknown         = '(ukendt)'
+        }
+    } else {
+        @{
+            OpenFail        = 'Could not open HKEY_CLASSES_ROOT: {0}'
+            NoProductsKey   = 'Cannot find HKCR\Installer\Products — run as administrator.'
+            Traversing      = 'Scanning {0} products in HKCR\Installer\Products — filter: ''{1}'''
+            BrokenCount     = 'Found {0} broken source references.'
+            NoneFound       = 'No broken MSI source references found.'
+            ShouldProcess   = 'Delete registry value'
+            Deleted         = '  DELETED       : {0}'
+            AccessDenied    = '  ACCESS DENIED : Could not open {0} for writing.'
+            DeleteError     = '  ERROR         : {0} — {1}'
+            Summary         = 'Done.  Deleted: {0}  |  Errors/Skipped: {1}'
+            Unknown         = '(unknown)'
+        }
+    }
+    #endregion
+
+    # Open HKCR via .NET directly — avoids HKCR PSDrive mounting issues entirely
+    try {
+        $hkcr = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
+            [Microsoft.Win32.RegistryHive]::ClassesRoot,
+            [Microsoft.Win32.RegistryView]::Registry64
+        )
+    }
+    catch {
+        Write-Error ($msg.OpenFail -f $_)
+        return
+    }
+
+    $productsKey = $hkcr.OpenSubKey('Installer\Products', $false)
+    if (-not $productsKey) {
+        Write-Error $msg.NoProductsKey
+        $hkcr.Dispose()
+        return
+    }
+
+    $results      = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $productGUIDs = $productsKey.GetSubKeyNames()
+
+    Write-Verbose ($msg.Traversing -f $productGUIDs.Count, $ProductName)
+
+    foreach ($guid in $productGUIDs) {
+        $productKey = $productsKey.OpenSubKey($guid, $false)
+        if (-not $productKey) { continue }
+
+        $prodName = $productKey.GetValue('ProductName')
+        if (-not $prodName) { $prodName = $msg.Unknown }
+
+        # Filter on -ProductName (wildcard, case-insensitive)
+        if ($prodName -notlike $ProductName) {
+            $productKey.Dispose()
+            continue
+        }
+
+        $sourceListKey = $productKey.OpenSubKey('SourceList', $false)
+        if (-not $sourceListKey) {
+            $productKey.Dispose()
+            continue
+        }
+
+        #region — SourceList\LastUsedSource
+        $lastUsed = $sourceListKey.GetValue('LastUsedSource')
+        if ($lastUsed) {
+            # Format: n;1;C:\path\to\folder\  or  n;1;\\server\share\
+            $parts = $lastUsed -split ';', 3
+            if ($parts.Count -eq 3) {
+                $rawPath = $parts[2].TrimEnd('\', '/')
+                if ($rawPath -match '^([A-Za-z]:|\\\\)') {
+                    if (-not (Test-Path -LiteralPath $rawPath -ErrorAction SilentlyContinue)) {
+                        $results.Add([PSCustomObject]@{
+                            GUID        = $guid
+                            ProductName = $prodName
+                            SourceType  = 'LastUsedSource'
+                            ValueName   = 'LastUsedSource'
+                            BrokenPath  = $rawPath
+                            RegSubKey   = "Installer\Products\$guid\SourceList"
+                        })
+                    }
+                }
+            }
+        }
+        #endregion
+
+        #region — SourceList\Net\*
+        $netKey = $sourceListKey.OpenSubKey('Net', $false)
+        if ($netKey) {
+            foreach ($valName in $netKey.GetValueNames()) {
+                $val = $netKey.GetValue($valName)
+                if ($val -and $val -match '^([A-Za-z]:|\\\\)') {
+                    $cleanPath = $val.TrimEnd('\', '/')
+                    if (-not (Test-Path -LiteralPath $cleanPath -ErrorAction SilentlyContinue)) {
+                        $results.Add([PSCustomObject]@{
+                            GUID        = $guid
+                            ProductName = $prodName
+                            SourceType  = 'Net'
+                            ValueName   = $valName
+                            BrokenPath  = $cleanPath
+                            RegSubKey   = "Installer\Products\$guid\SourceList\Net"
+                        })
+                    }
+                }
+            }
+            $netKey.Dispose()
+        }
+        #endregion
+
+        #region — SourceList\Media\* (only when value resembles a path)
+        $mediaKey = $sourceListKey.OpenSubKey('Media', $false)
+        if ($mediaKey) {
+            foreach ($valName in $mediaKey.GetValueNames()) {
+                $val = $mediaKey.GetValue($valName)
+                if ($val -and $val -match '^([A-Za-z]:|\\\\)') {
+                    $cleanPath = $val.TrimEnd('\', '/')
+                    if (-not (Test-Path -LiteralPath $cleanPath -ErrorAction SilentlyContinue)) {
+                        $results.Add([PSCustomObject]@{
+                            GUID        = $guid
+                            ProductName = $prodName
+                            SourceType  = 'Media'
+                            ValueName   = $valName
+                            BrokenPath  = $cleanPath
+                            RegSubKey   = "Installer\Products\$guid\SourceList\Media"
+                        })
+                    }
+                }
+            }
+            $mediaKey.Dispose()
+        }
+        #endregion
+
+        $sourceListKey.Dispose()
+        $productKey.Dispose()
+    }
+
+    $productsKey.Dispose()
+
+    Write-Verbose ($msg.BrokenCount -f $results.Count)
+
+    #region — Output
+    if ($results.Count -eq 0) {
+        Write-Host $msg.NoneFound -ForegroundColor Green
+        $hkcr.Dispose()
+        return
+    }
+
+    $results | Format-Table -AutoSize -Property ProductName, SourceType, BrokenPath, ValueName, GUID
+    #endregion
+
+    #region — Fix
+    if ($Fix) {
+        $deleted = 0
+        $skipped = 0
+
+        foreach ($item in $results) {
+            $displayMsg = "[$($item.SourceType)] '$($item.BrokenPath)' — $($item.ProductName)"
+
+            if ($PSCmdlet.ShouldProcess($displayMsg, $msg.ShouldProcess)) {
+                try {
+                    $writeKey = $hkcr.OpenSubKey($item.RegSubKey, $true)
+                    if ($writeKey) {
+                        $writeKey.DeleteValue($item.ValueName, $true)
+                        $writeKey.Dispose()
+                        Write-Host ($msg.Deleted -f $displayMsg) -ForegroundColor Yellow
+                        $deleted++
+                    }
+                    else {
+                        Write-Warning ($msg.AccessDenied -f $item.RegSubKey)
+                        $skipped++
+                    }
+                }
+                catch {
+                    Write-Warning ($msg.DeleteError -f $displayMsg, $_)
+                    $skipped++
+                }
+            }
+        }
+
+        Write-Host ''
+        Write-Host ($msg.Summary -f $deleted, $skipped) -ForegroundColor Cyan
+    }
+    #endregion
+
+    $hkcr.Dispose()
+
+    if ($PassThru -or -not $Fix) {
+        return $results
+    }
+}
+#endregion FindMSIBrokenSources
+
 #region Set-ScheduledTaskMSA
 function Set-ScheduledTaskMSA {
     <#
