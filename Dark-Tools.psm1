@@ -426,6 +426,197 @@ function Format-MacAddress {
 
 #endregion Format-MacAddress
 
+#region Get-CMTraceLog
+function Get-CMTraceLog {
+    <#
+    .SYNOPSIS
+        Reads and formats CMTrace-style log files.
+    .DESCRIPTION
+        Parses CMTrace-formatted log entries (as used by MECM/SCCM and many Microsoft
+        installer/agent logs) and prints them to the console in a readable, colour-coded
+        format. Multi-line log entries are reassembled correctly before formatting.
+        Supports reading a static log file, tailing the first/last N lines, and following
+        the file live with -Wait (auto-reconnecting on transient read errors).
+    .PARAMETER Path
+        Specifies the path to the CMTrace log file. Accepts pipeline input.
+    .PARAMETER Wait
+        If specified, follows the log file live as new entries are appended (like `Get-Content -Wait`).
+        Automatically retries on transient I/O or remoting errors.
+    .PARAMETER First
+        Specifies the number of entries to read from the start of the file. Ignored when -Wait is used.
+    .PARAMETER Last
+        Specifies the number of entries to read from the end of the file. When used with -Wait, only the
+        last N existing lines are shown before following live.
+    .PARAMETER Detailed
+        If specified, keeps multi-line log messages on separate lines instead of the default
+        single-line compact output.
+    .EXAMPLE
+        Get-CMTraceLog -Path "C:\Windows\CCM\Logs\ExecMgr.log"
+        Reads and formats the entire log file in compact single-line format.
+    .EXAMPLE
+        Get-CMTraceLog -Path "C:\Windows\CCM\Logs\ExecMgr.log" -Last 50 -Detailed
+        Shows the last 50 entries with multi-line messages kept intact.
+    .EXAMPLE
+        Get-CMTraceLog -Path "C:\Windows\CCM\Logs\ExecMgr.log" -Wait
+        Follows the log file live, printing new entries as they are written.
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Wait,
+
+        [Parameter(Mandatory = $false)]
+        [int]$First,
+
+        [Parameter(Mandatory = $false)]
+        [int]$Last,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Detailed
+    )
+
+    if (-not (Test-Path -Path $Path)) {
+        Write-Error "The log file at '$Path' was not found."
+        return
+    }
+
+    $GetContentParams = @{
+        Path = $Path
+    }
+
+    if ($Wait) {
+        $GetContentParams['Wait'] = $true
+        if ($PSBoundParameters.ContainsKey('Last')) {
+            $GetContentParams['Tail'] = $Last
+        }
+        Write-Host "Lytter live på logfil: $Path (Tryk Ctrl+C for at stoppe)" -ForegroundColor Cyan
+    } else {
+        if ($PSBoundParameters.ContainsKey('First')) {
+            $GetContentParams['TotalCount'] = $First
+        }
+        if ($PSBoundParameters.ContainsKey('Last')) {
+            $GetContentParams['Tail'] = $Last
+        }
+        Write-Host "Læser statisk logfil: $Path" -ForegroundColor Cyan
+    }
+
+    # Global buffer to accumulate multi-line entries
+    $LogBuffer = ""
+    $KeepRunning = $true
+
+    # Loop to reconnect if the remote pipeline stops unexpectedly
+    while ($KeepRunning) {
+        try {
+            Get-Content @GetContentParams | ForEach-Object {
+                $Line = $_
+
+                # Append current line to the buffer. Preserve newlines by joining with `n
+                if ($LogBuffer -eq "") {
+                    $LogBuffer = $Line
+                } else {
+                    $LogBuffer = "$LogBuffer`n$Line"
+                }
+
+                # Check if the buffer now contains the closing tag of a CMTrace entry
+                if ($LogBuffer -match '\]LOG\]!><time="(?<Time>[^"]*)".*?date="(?<Date>[^"]*)".*?component="(?<Comp>[^"]*)".*?type="(?<Type>[0-9]?)"') {
+
+                    $TimeStr = $Matches['Time']
+                    $DateStr = $Matches['Date']
+                    $CompStr = $Matches['Comp']
+                    $TypeStr = $Matches['Type']
+
+                    # Pad single-digit days with a leading zero (e.g., "6-03-2026" -> "06-03-2026")
+                    if ($DateStr -match '^\d-') {
+                        $DateStr = "0$DateStr"
+                    }
+
+                    # Clean up time string to remove milliseconds/timezone for cleaner output (e.g., "07:24:15.200+60" -> "07:24:15")
+                    if ($TimeStr -match '^\d{2}:\d{2}:\d{2}') {
+                        $TimeStr = $Matches[0]
+                    }
+
+                    # Clean up the message by stripping the CMTrace structural tags
+                    $CleanMessage = $LogBuffer -replace '^<!\[LOG\[', ''
+                    $CleanMessage = $CleanMessage -replace '\]LOG\]!><time=.*$', ''
+
+                    # Handle compact mode (default) vs detailed multi-line output
+                    if ($Detailed) {
+                        $FormatString = "[$DateStr $TimeStr] {0}: `n{1} ({2})"
+                    } else {
+                        # Replace all newlines and carriage returns with a space, and trim double spaces
+                        $CleanMessage = $CleanMessage -replace '[\r\n]+', ' '
+                        $CleanMessage = $CleanMessage -replace '\s+', ' '
+                        $FormatString = "[$DateStr $TimeStr] {0}: {1} ({2})"
+                    }
+
+                    $LogType = switch ($TypeStr) {
+                        "1" { "Info" }
+                        "2" { "Warning" }
+                        "3" { "Error" }
+                        default { "Verbose" }
+                    }
+
+                    # Create object via New-Object PSObject for Restricted Mode compliance
+                    $LogEntry = New-Object PSObject -Property @{
+                        Timestamp = "$DateStr $TimeStr"
+                        Message   = $CleanMessage
+                        Component = $CompStr
+                        Type      = $LogType
+                    }
+
+                    # Direct console presentation in Danish based on Type and formatting
+                    switch ($LogEntry.Type) {
+                        "Error" {
+                            $Text = $FormatString -f "FEJL", $LogEntry.Message, $LogEntry.Component
+                            Write-Host $Text -ForegroundColor Red
+                        }
+                        "Warning" {
+                            $Text = $FormatString -f "ADVARSEL", $LogEntry.Message, $LogEntry.Component
+                            Write-Host $Text -ForegroundColor Yellow
+                        }
+                        default {
+                            $Label = if ($LogEntry.Type -eq "Info") { "INFO" } else { "VERBOSE" }
+                            $Text = $FormatString -f $Label, $LogEntry.Message, $LogEntry.Component
+                            Write-Host $Text -ForegroundColor Gray
+                        }
+                    }
+
+                    # Clear buffer for the next log entry
+                    $LogBuffer = ""
+                }
+            }
+
+            # If Get-Content finishes naturally (without -Wait), exit the loop
+            if (-not $Wait) {
+                $KeepRunning = $false
+            }
+
+        } catch [System.Management.Automation.Remoting.PSRemotingDataStructureException], [System.IO.IOException] {
+            # Handle remote pipeline drops and network blips
+            if ($Wait) {
+                Write-Warning "Forbindelse tabt eller afbrudt. Genforbinder om 3 sekunder..."
+                Start-Sleep -Seconds 3
+
+                # Adjust params for reconnect so we don't dump the whole log history again
+                if (-not $GetContentParams.ContainsKey('Tail')) {
+                    $GetContentParams['Tail'] = 1
+                }
+            } else {
+                $KeepRunning = $false
+                Write-Error $_.Exception.Message
+            }
+        } catch {
+            # Critical errors exit immediately
+            $KeepRunning = $false
+            Write-Error $_.Exception.Message
+        }
+    }
+}
+#endregion Get-CMTraceLog
+
 #region Get-ComputerAdGroups
 function Get-ComputerAdGroups {
     <#
@@ -951,6 +1142,115 @@ function Get-ImageInformation {
     return $image
 }
 #endregion Get-ImageInformation
+
+#region Get-LoggedOnUser
+function Get-LoggedOnUser {
+    <#
+    .SYNOPSIS
+        Finds logged on users via Console and RDP.
+    .DESCRIPTION
+        Parses output from quser.exe to comply with Restricted Mode constraints.
+        Performs a quick connection check before querying the machine.
+        Cleans the '>' indicator from active usernames.
+    .PARAMETER ComputerName
+        Specifies one or more computer names to query. Defaults to "localhost". Accepts pipeline input.
+    .OUTPUTS
+        Returns a custom object per session with ComputerName, UserName, SessionName, SessionId,
+        State, Type (Console/RDP), IdleTime, and LogonTime.
+    .EXAMPLE
+        Get-LoggedOnUser
+        Returns logged-on sessions for the local computer.
+    .EXAMPLE
+        Get-LoggedOnUser -ComputerName "Server01"
+        Returns logged-on sessions for the remote computer Server01.
+    .EXAMPLE
+        "Server01", "Server02" | Get-LoggedOnUser
+        Returns logged-on sessions for multiple computers via the pipeline.
+    #>
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline = $true)]
+        [string[]]$ComputerName = "localhost"
+    )
+
+    process {
+        foreach ($Comp in $ComputerName) {
+            try {
+                # Quick connection test to avoid quser.exe timeout hangs
+                if (-not (Test-Connection -ComputerName $Comp -Count 1 -Quiet)) {
+                    Write-Warning "Kunne ikke oprette forbindelse til $Comp (Ping svarede ikke)."
+                    continue
+                }
+
+                # Run quser.exe and capture output
+                $quserOutput = quser.exe /server:$Comp 2>$null
+
+                if (-not $quserOutput) {
+                    Write-Warning "Ingen brugere fundet på maskinen $Comp."
+                    continue
+                }
+
+                # Skip the header line and parse each user session
+                for ($i = 1; $i -lt $quserOutput.Count; $i++) {
+                    $line = $quserOutput[$i].Trim()
+
+                    # Replace multiple spaces with a single space to make splitting reliable
+                    while ($line -match "  ") {
+                        $line = $line -replace "  ", " "
+                    }
+
+                    $fields = $line -split " "
+
+                    # If the SESSIONNAME is missing, the fields shift. We adjust for that here.
+                    if ($fields.Count -eq 5) {
+                        $userName    = $fields[0]
+                        $sessionName = "Console"
+                        $id          = $fields[1]
+                        $state       = $fields[2]
+                        $idleTime    = $fields[3]
+                        $logonTime   = $fields[4]
+                    }
+                    else {
+                        $userName    = $fields[0]
+                        $sessionName = $fields[1]
+                        $id          = $fields[2]
+                        $state       = $fields[3]
+                        $idleTime    = $fields[4]
+                        $logonTime   = $fields[5]
+                    }
+
+                    # Clean the '>' indicator from the username if present
+                    if ($userName -like ">*") {
+                        $userName = $userName.TrimStart('>')
+                    }
+
+                    # Determine connection type (RDP vs Console)
+                    $type = "Console"
+                    if ($sessionName -like "rdp*") {
+                        $type = "RDP"
+                    }
+
+                    # Create custom object using New-Object PSObject as per constraints
+                    New-Object PSObject -Property @{
+                        ComputerName = $Comp
+                        UserName     = $userName
+                        SessionName  = $sessionName
+                        SessionId    = $id
+                        State        = $state
+                        Type         = $type
+                        IdleTime     = $idleTime
+                        LogonTime    = $logonTime
+                    }
+                }
+            }
+            catch {
+                # Encapsulated variable in ${Comp} to avoid the colon parsing issue
+                Write-Error "Fejl ved hentning af data fra ${Comp}: $_"
+            }
+        }
+    }
+}
+#endregion Get-LoggedOnUser
 
 #region Get-ProcessOwner
 function Get-ProcessOwner {
@@ -3034,6 +3334,69 @@ function Format-Bytes([double]$bytes) {
 }
 #endregion Format-Bytes
 
+
+#region Move-FilesUpOneLevel
+function Move-FilesUpOneLevel {
+    <#
+    .SYNOPSIS
+        Moves files from 1st-level subfolders up into the parent folder.
+    .DESCRIPTION
+        Scans the 1st-level subfolders of the specified path and moves all files found in them
+        directly into the parent path, flattening one level of folder structure. Optionally
+        deletes subfolders that end up empty (recursively checked) after the move.
+    .PARAMETER Path
+        Specifies the parent folder whose 1st-level subfolders should be flattened.
+    .PARAMETER DeleteOrphanedFolders
+        If specified, removes subfolders that contain no files (recursively) after the move.
+    .EXAMPLE
+        Move-FilesUpOneLevel -Path "C:\Downloads"
+        Moves all files from each 1st-level subfolder of C:\Downloads into C:\Downloads.
+    .EXAMPLE
+        Move-FilesUpOneLevel -Path "C:\Downloads" -DeleteOrphanedFolders
+        Moves the files and removes any subfolders left without files.
+    .EXAMPLE
+        Move-FilesUpOneLevel -Path "C:\Downloads" -WhatIf
+        Shows which files would be moved without making any changes.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [switch]$DeleteOrphanedFolders
+    )
+
+    # Hent alle 1. level undermapper
+    $subFolders = Get-ChildItem -Path $Path -Directory
+
+    foreach ($folder in $subFolders) {
+        $files = Get-ChildItem -Path $folder.FullName -File
+
+        foreach ($file in $files) {
+            $destination = Join-Path -Path $Path -ChildPath $file.Name
+
+            if ($PSCmdlet.ShouldProcess($file.FullName, "Move to $destination")) {
+                Move-Item -Path $file.FullName -Destination $destination
+            }
+        }
+    }
+
+    if ($DeleteOrphanedFolders) {
+        foreach ($folder in $subFolders) {
+            if (-not (Test-Path $folder.FullName)) { continue }
+
+            # Tjek rekursivt om mappen indeholder nogen filer overhovedet
+            $remainingFiles = Get-ChildItem -Path $folder.FullName -File -Recurse -Force
+
+            if (-not $remainingFiles) {
+                if ($PSCmdlet.ShouldProcess($folder.FullName, "Remove empty folder")) {
+                    Remove-Item -Path $folder.FullName -Recurse -Force
+                }
+            }
+        }
+    }
+}
+#endregion Move-FilesUpOneLevel
 
 #region Import-Ods
 function Import-Ods {

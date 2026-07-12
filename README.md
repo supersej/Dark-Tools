@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -46,6 +46,11 @@ Format-MacAddress -MacAddress "00:1A:2B:3C:4D:5E" -Separator "-" -Uppercase
 ```powershell
 Convert-SecondsToHumanReadable -Seconds 93784
 1 days, 2 hours, 3 minutes, 4 seconds
+```
+
+- **Get-CMTraceLog** - Reads and formats CMTrace-style log files, with colour-coded output and live tailing via -Wait. Compact single-line output by default, use -Detailed for multi-line messages.
+```powershell
+Get-CMTraceLog -Path "C:\Windows\CCM\Logs\ExecMgr.log" -Last 50
 ```
 
 - **Get-ComputerAdGroups** - Retrieves Active Directory group memberships for the current computer.
@@ -95,6 +100,16 @@ Height Width PixelDepth
 
 - **Get-LastUserLogon** - Retrieves the last logon time and details for a specific user from Security event log.
 ***Removed due to poor default retention time in Windows EventLog***
+
+- **Get-LoggedOnUser** - Finds logged on users via Console and RDP by parsing quser.exe output.
+```powershell
+Get-LoggedOnUser -ComputerName "Server01"
+
+ComputerName UserName Type    SessionName SessionId State
+------------ -------- ----    ----------- --------- -----
+Server01     john     Console console     1         Active
+Server01     jane     RDP     rdp-tcp#12  3         Active
+```
 
 - **Get-ProcessOwner** - Retrieves the owner/user account of running processes by name.
 ```powershell
@@ -190,6 +205,11 @@ Wait for 10 seconds
 - **Invoke-PauseWithTimeout** - Show a graphical dialog asking the user if the computer should be set into standby.
 ```powershell
 Invoke-StandbyPrompt -ShowLockButton
+```
+
+- **Move-FilesUpOneLevel** - Moves files from 1st-level subfolders up into the parent folder, optionally removing folders left empty.
+```powershell
+Move-FilesUpOneLevel -Path "C:\Downloads" -DeleteOrphanedFolders
 ```
 
 - **ProcessingAnimation** - Displays an animated spinner while a script block executes
