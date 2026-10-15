@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -66,9 +66,10 @@ Get-ExecutableArchitecture C:\windows\system32\calc.exe
 64-bit
 ```
 
-- **Get-FileViaExplorer** - Opens a file browser dialog for interactive file selection with optional filtering.
+- **Get-FileViaExplorer** - Opens a file browser dialog for interactive file selection with optional filtering. In Constrained Language Mode it falls back to a folder browser built on Out-GridView (select a folder to open it, `..` to go up, a drive root's `..` shows all drives).
 ```powershell
 $SelectedFile = Get-FileViaExplorer
+$Scripts = Get-FileViaExplorer -Startdir "C:\Scripts" -Filter 'Scripts|*.ps1;*.psm1|All files|*.*' -MultipleFiles
 ```
 
 - **Get-FolderSize** - Calculates the total size of a folder in megabytes with recursive and filtering options.

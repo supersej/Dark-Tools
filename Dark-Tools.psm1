@@ -770,6 +770,9 @@ function Get-FileViaExplorer {
         Opens a file browser dialog to allow user selection of files.
     .DESCRIPTION
         Displays a Windows Forms OpenFileDialog for interactive file selection. Supports single or multiple file selection with optional file type filtering.
+        In Constrained Language Mode (where Windows Forms is blocked) a browser built on Out-GridView is shown instead:
+        select a folder to open it, '..' to go up (from a drive root '..' shows the list of drives), or one or more files to return them.
+        In CLM only the patterns from the first filter group are used.
     .PARAMETER Startdir
         Specifies the initial directory path for the file browser. Defaults to Desktop.
     .PARAMETER Filter
@@ -795,10 +798,80 @@ function Get-FileViaExplorer {
         Opens file browser allowing selection of multiple files.
     #>
     Param(
-        [String]$Startdir = [Environment]::GetFolderPath('Desktop'),
+        [String]$Startdir,
         [String]$Filter = "",
         [switch]$MultipleFiles = $false
     )
+
+    # Default to the user's Desktop without [Environment]::GetFolderPath (static method calls are blocked in CLM)
+    # Reads the Desktop path from the registry so OneDrive/folder redirection is respected
+    if (-not $Startdir) {
+        $Startdir = Get-ItemPropertyValue -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders' -Name 'Desktop' -ErrorAction SilentlyContinue
+        if (-not $Startdir) { $Startdir = Join-Path -Path $env:USERPROFILE -ChildPath 'Desktop' }
+    }
+
+    # CLM fallback: Windows Forms is blocked, so browse with Out-GridView instead
+    if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+        # Use the patterns from the first filter group, e.g. 'Scripts|*.ps1;*.psm1|All|*.*' -> *.ps1, *.psm1
+        $patterns = @('*')
+        if ($Filter) {
+            $filterParts = $Filter -split '\|'
+            if ($filterParts.Count -ge 2) { $patterns = $filterParts[1] -split ';' } else { $patterns = $filterParts[0] -split ';' }
+            $patterns = $patterns | ForEach-Object { if ($_.Trim() -eq '*.*') { '*' } else { $_.Trim() } }
+        }
+
+        $outputMode = if ($MultipleFiles) { 'Multiple' } else { 'Single' }
+
+        # Empty string = drive list
+        $current = ''
+        if (Test-Path -LiteralPath $Startdir -PathType Container) { $current = $Startdir }
+
+        while ($true) {
+            $items = @()
+
+            if ($current -eq '') {
+                $title = 'Select drive'
+                foreach ($drive in (Get-PSDrive -PSProvider FileSystem)) {
+                    $items += New-Object -TypeName PSObject -Property @{ Type = 'Drive'; Name = $drive.Root; Size = ''; Modified = '' }
+                }
+            } else {
+                $title = "Select file(s) - $current"
+                $items += New-Object -TypeName PSObject -Property @{ Type = 'Up'; Name = '..'; Size = ''; Modified = '' }
+
+                foreach ($dir in (Get-ChildItem -LiteralPath $current -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
+                    $items += New-Object -TypeName PSObject -Property @{ Type = 'Folder'; Name = $dir.Name; Size = ''; Modified = ('{0:yyyy-MM-dd HH:mm}' -f $dir.LastWriteTime) }
+                }
+
+                $files = Get-ChildItem -LiteralPath $current -File -ErrorAction SilentlyContinue | Where-Object {
+                    $fileName = $_.Name
+                    $patterns | Where-Object { $fileName -like $_ }
+                } | Sort-Object Name
+
+                foreach ($file in $files) {
+                    $items += New-Object -TypeName PSObject -Property @{ Type = 'File'; Name = $file.Name; Size = ('{0:N0} KB' -f ($file.Length / 1KB)); Modified = ('{0:yyyy-MM-dd HH:mm}' -f $file.LastWriteTime) }
+                }
+            }
+
+            $selection = $items | Select-Object Type, Name, Size, Modified | Out-GridView -Title $title -OutputMode $outputMode
+
+            # Cancelled
+            if (-not $selection) { return }
+
+            # A drive, folder or '..' was selected: navigate
+            $nav = $selection | Where-Object Type -ne 'File' | Select-Object -First 1
+            if ($nav) {
+                switch ($nav.Type) {
+                    'Up'     { $current = Split-Path -Path $current -Parent }   # '' at a drive root -> drive list
+                    'Drive'  { $current = $nav.Name }
+                    'Folder' { $current = Join-Path -Path $current -ChildPath $nav.Name }
+                }
+                continue
+            }
+
+            # Files selected: return full paths
+            return $selection | ForEach-Object { Join-Path -Path $current -ChildPath $_.Name }
+        }
+    }
 
     try {
         Add-Type -AssemblyName System.Windows.Forms # Add the necessary .NET assembly for Windows Forms
@@ -827,8 +900,8 @@ function Get-FileViaExplorer {
     } catch {
         Write-Error "An error occurred: $_"
     } finally {
-        # Clear resources used by OpenFileDialog
-        $FileBrowser.Dispose()
+        # Clear resources used by OpenFileDialog (only if it was created)
+        if ($FileBrowser) { $FileBrowser.Dispose() }
     }
 }
 #endregion Get-FileViaExplorer
