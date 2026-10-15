@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -224,6 +224,20 @@ ProcessingAnimation -scriptBlock {sleep -Seconds 3}
 - **Search-FileContent** - Searches for specific content within files with filtering and recursion options.
 ```powershell
 Search-FileContent -Path "C:\Windows\CCM\Logs" -Content "ERROR" -Recurse -ShowContent
+```
+
+- **Set-CodeSignature** - Signs files with your code signing certificate (e.g. on a YubiKey) using SHA256 and a timestamp. Without a path it signs the active file in VS Code/VSCodium, otherwise it opens a file picker.
+```powershell
+Set-CodeSignature .\script.ps1
+
+File                  Status StatusMessage
+----                  ------ -------------
+C:\Scripts\script.ps1  Valid Signature verified.
+```
+```powershell
+Get-ChildItem .\Scripts\*.ps1 | Set-CodeSignature
+Set-CodeSignature -Path .\Dark-Tools.psm1 -Thumbprint "A1B2C3D4E5F6..." -WhatIf
+Set-CodeSignature   # Signs the active file in VS Code, otherwise opens a file picker
 ```
 
 - **Show-Calendar** - Displays a visual calendar with optional date highlighting.

@@ -2442,6 +2442,126 @@ function Search-FileContent {
 }
 #endregion Search-FileContent
 
+#region Set-CodeSignature
+function Set-CodeSignature {
+    <#
+    .SYNOPSIS
+        Signs files with the user's code signing certificate (e.g. on a YubiKey).
+    .DESCRIPTION
+        Finds a valid code signing certificate in Cert:\CurrentUser\My and signs the given files
+        with SHA256 and a timestamp. If no path is given and the function runs in the
+        PowerShell Extension Terminal in VS Code/VSCodium, the active editor file is saved and signed.
+        Otherwise a file picker is shown (Get-FileViaExplorer).
+    .PARAMETER Path
+        One or more files to sign. Accepts pipeline input, including FileInfo objects from Get-ChildItem.
+    .PARAMETER Thumbprint
+        Use a specific certificate. If omitted, the valid code signing certificate with the latest expiry is used.
+    .PARAMETER TimestampServer
+        Timestamp server URL. Defaults to http://timestamp.digicert.com
+    .OUTPUTS
+        PSObject with File, Status and StatusMessage per signed file.
+    .EXAMPLE
+        Set-CodeSignature .\script.ps1
+    .EXAMPLE
+        Get-ChildItem .\Scripts\*.ps1 | Set-CodeSignature
+    .EXAMPLE
+        Set-CodeSignature    # signs the active file in VS Code, otherwise opens file picker
+    .EXAMPLE
+        Set-CodeSignature .\Dark-Tools.psm1 -WhatIf
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    Param(
+        [Parameter(Position = 0, ValueFromPipeline, ValueFromPipelineByPropertyName)]
+        [Alias('FullName')]
+        [String[]]$Path,
+
+        [String]$Thumbprint,
+
+        [String]$TimestampServer = 'http://timestamp.digicert.com'
+    )
+
+    begin {
+        # Find a valid code signing certificate with a private key
+        $certs = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
+            Where-Object { $_.HasPrivateKey -and $_.NotAfter -gt (Get-Date) }
+
+        if ($Thumbprint) {
+            $certs = $certs | Where-Object Thumbprint -eq $Thumbprint
+        }
+
+        if (-not $certs) {
+            throw "No valid code signing certificate found in Cert:\CurrentUser\My. Is the YubiKey inserted?"
+        }
+
+        # Use the certificate with the latest expiry if there are several
+        $cert = $certs | Sort-Object NotAfter -Descending | Select-Object -First 1
+        Write-Verbose "Using certificate: $($cert.Subject) (expires $($cert.NotAfter), $($cert.Thumbprint))"
+
+        # Plain array instead of List[string] for CLM compatibility
+        $files = @()
+    }
+
+    process {
+        foreach ($p in $Path) {
+            if ($p) { $files += $p }
+        }
+    }
+
+    end {
+        # No path given: use the active file in VS Code/VSCodium (PowerShell Extension Terminal only)
+        # Note: method calls on $psEditor are blocked in CLM - falls back to the file picker if so
+        if ($files.Count -eq 0 -and $psEditor) {
+            try {
+                $current = $psEditor.GetEditorContext().CurrentFile
+                if ($current -and (Test-Path -LiteralPath $current.Path -PathType Leaf)) {
+                    # Save unsaved changes first, otherwise the signature covers the old content on disk
+                    try { $current.Save() } catch { Write-Verbose "Could not save active file: $_" }
+                    Write-Verbose "Using active editor file: $($current.Path)"
+                    $files += $current.Path
+                }
+            } catch {
+                Write-Verbose "Could not get active editor file: $_"
+            }
+        }
+
+        # No path given: show file picker
+        if ($files.Count -eq 0) {
+            $filter = 'Signable files|*.ps1;*.psm1;*.psd1;*.ps1xml;*.exe;*.dll;*.msi|All files|*.*'
+            $selected = Get-FileViaExplorer -Filter $filter -MultipleFiles
+            foreach ($s in $selected) {
+                if ($s) { $files += $s }
+            }
+        }
+
+        if ($files.Count -eq 0) {
+            Write-Warning "No files selected."
+            return
+        }
+
+        foreach ($file in $files) {
+            try {
+                $resolved = (Resolve-Path -LiteralPath $file -ErrorAction Stop).ProviderPath
+            } catch {
+                Write-Error "File not found: $file"
+                continue
+            }
+
+            if ($PSCmdlet.ShouldProcess($resolved, "Sign with $($cert.Subject)")) {
+                $result = Set-AuthenticodeSignature -LiteralPath $resolved -Certificate $cert `
+                    -HashAlgorithm SHA256 -TimestampServer $TimestampServer
+
+                # New-Object PSObject instead of [PSCustomObject] cast for CLM compatibility
+                New-Object -TypeName PSObject -Property @{
+                    File          = $resolved
+                    Status        = $result.Status
+                    StatusMessage = $result.StatusMessage
+                } | Select-Object File, Status, StatusMessage
+            }
+        }
+    }
+}
+#endregion Set-CodeSignature
+
 #region Show-Calendar
 function Show-Calendar {
     <#
