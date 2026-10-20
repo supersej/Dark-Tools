@@ -2375,20 +2375,18 @@ function Invoke-StandbyPrompt {
     $btnLock.Background = ConvertTo-Brush $c.BtnLockBg
     $btnLock.Foreground = ConvertTo-Brush $c.BtnLockFg
 
-    # Hover/press triggers are created dynamically so they use the theme colors
-    foreach ($btn in @(
-        @{ Ctrl = $btnNo;   Hover = $c.BtnNoHover;   Press = $c.BtnNoPress   }
-        @{ Ctrl = $btnLock; Hover = $c.BtnLockHover; Press = $c.BtnLockPress }
-    )) {
-        $ctrl = $btn.Ctrl
-        $hover = $btn.Hover
-        $press = $btn.Press
-        $ctrl.add_MouseEnter({ $ctrl.Background = ConvertTo-Brush $hover })
-        $ctrl.add_MouseLeave({ $ctrl.Background = ConvertTo-Brush $(
-            if ($ctrl.Name -eq 'BtnNo') { $c.BtnNoBg } else { $c.BtnLockBg }
-        ) })
-        $ctrl.add_PreviewMouseLeftButtonDown({ $ctrl.Background = ConvertTo-Brush $press })
-        $ctrl.add_PreviewMouseLeftButtonUp({   $ctrl.Background = ConvertTo-Brush $hover })
+    # Hover/press triggers are created dynamically so they use the theme colors.
+    # The handlers use $this (the button raising the event) and pre-built brushes per button name,
+    # because loop variables are resolved when the event fires, not when the handler is created.
+    $btnBrushes = @{
+        BtnNo   = @{ Normal = ConvertTo-Brush $c.BtnNoBg;   Hover = ConvertTo-Brush $c.BtnNoHover;   Press = ConvertTo-Brush $c.BtnNoPress   }
+        BtnLock = @{ Normal = ConvertTo-Brush $c.BtnLockBg; Hover = ConvertTo-Brush $c.BtnLockHover; Press = ConvertTo-Brush $c.BtnLockPress }
+    }
+    foreach ($ctrl in @($btnNo, $btnLock)) {
+        $ctrl.add_MouseEnter({                 $this.Background = $btnBrushes[$this.Name].Hover  })
+        $ctrl.add_MouseLeave({                 $this.Background = $btnBrushes[$this.Name].Normal })
+        $ctrl.add_PreviewMouseLeftButtonDown({ $this.Background = $btnBrushes[$this.Name].Press  })
+        $ctrl.add_PreviewMouseLeftButtonUp({   $this.Background = $btnBrushes[$this.Name].Hover  })
     }
 
     # Insert localized texts
