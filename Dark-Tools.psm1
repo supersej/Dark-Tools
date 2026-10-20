@@ -77,145 +77,7 @@ function ConvertFrom-DistinguishedName {
 		}
 	}
 }
-
-function Format-MacAddress {
-    <#
-    .SYNOPSIS
-        Function to do a cleanup of a MACAddress string
-    .DESCRIPTION
-        Cleanup a MACAddress string and optionally format it with separators
-    .PARAMETER MacAddress
-        Specifies the MacAddress. Either a single string or an array of strings. Aliased to 'Address'
-    .PARAMETER Separator
-        Specifies the separator every X characters. Aliased to 'Delimiter'. Validated against set(':', 'None', '.', "-", ' ', 'Space', ';')
-    .PARAMETER Case
-        Specifies if the output is to be set in a particular case
-        Upper Sets to upper case, 'a' becomes 'A'
-        Uppercase Sets to upper case, 'a' becomes 'A'
-        Lower Sets to lower case, 'A' becomes 'a'
-        Lowercase Sets to lower case, 'A' becomes 'a'
-        Ignore Does nothing to the case of the letters 'aB', so remains as 'aB'
-    .PARAMETER Split
-        Specifies how many characters to split the MacAddress on. Valid values are 2,3,4,6
-    .EXAMPLE
-        Format-MacAddress -MacAddress 1234567890ab
-        12:34:56:78:90:ab
-    .EXAMPLE
-        Format-MacAddress -MacAddress '00:11:22:dD:ee:FF' -Case Upper
-        00:11:22:DD:EE:FF
-    .EXAMPLE
-        Format-MacAddress -MacAddress '00:11:22:dD:ee:FF' -Case Lowercase
-        001122ddeeff
-    .EXAMPLE
-        Format-MacAddress -MacAddress '00:11:22:dD:ee:FF' -Case Lowercase -Separator '-'
-        00-11-22-dd-ee-ff
-    .EXAMPLE
-        Format-MacAddress -MacAddress '00:11:22:dD:ee:FF' -Case Lowercase -Separator '.'
-        00.11.22.dd.ee.ff
-    .EXAMPLE
-        Format-MacAddress -Address '00:11:22:dD:ee:FF', '10005a123456' -case Uppercase -Delimiter '-'
-        00-11-22-DD-EE-FF
-        10-00-5A-12-34-56
-        Showing how function can take an array of MacAddress using the alias 'Address' and the alias 'Delimiter' for the 'Separator' parameter
-    .EXAMPLE
-        '00:11:22:dD:ee:FF', '10005a123456' | Format-MacAddress -case Lowercase -Separator '.'
-        00.11.22.dd.ee.ff
-        10.00.5a.12.34.56
-        Showing how the values for MacAddress can be received from the pipeline
-    .EXAMPLE
-        Format-MacAddress '10005a123456' -case Lowercase -Separator ':'
-        10:00:5a:12:34:56
-        Showing how MacAddress can be unnamed positional parameter
-    .EXAMPLE
-        '00:11:22:dD:ee:FF' | Format-MacAddress -Separator None -Case Ignore
-        001122dDeeFF
-    .EXAMPLE
-        '00:11:22:dD:ee:FF', '10005a123456' | Format-MacAddress -case Lowercase -Separator '.' -Split 4
-        0011.22dd.eeff
-        1000.5a12.3456
-    .EXAMPLE
-        '00:11:22:dD:ee:FF', '10005a123456' | Format-MacAddress -case Lowercase -Separator '.' -Split 4 -IncludeOriginal
-        OriginalMac FormattedMac
-        ----------- ------------
-        00:11:22:dD:ee:FF 0011.22dd.eeff
-        10005a123456 1000.5a12.3456
-    .OUTPUTS
-        System.String
-    .NOTES
-        # Inspired and based on Clean-MacAddress.ps1 by Francois-Xavier www.lazywinadmin.com
-        #
-        # Daniel Ravnholt
-        # Dark@rn.dk
-        Modified:
-        First RN release
-    #>
-    #region Parameter
-    [OutputType('String')]
-    [CmdletBinding()]
-    param (
-        [Parameter(Position=0, HelpMessage='Please enter a MAC address (12 hex)', Mandatory, ValueFromPipeline)]
-        [Alias('Address')]
-        [String[]] $MacAddress,
-
-        [ValidateSet(':', 'None', '.', '-', ' ', 'Space', ';')]
-        [Alias('Delimiter')]
-        [string] $Separator = ':',
-
-        [ValidateSet('Ignore', 'Upper', 'Uppercase', 'Lower', 'Lowercase')]
-        [string] $Case = 'Lower',
-
-        [ValidateSet(2,3,4,6)]
-        [int] $Split = 2,
-
-        [switch] $IncludeOriginal
-    )
-    #endregion Parameter
-    begin {
-        if ($Separator -eq 'Space') { $Separator = ' ' }
-        Write-Verbose -Message "Starting $($MyInvocation.Mycommand)"
-    }
-    process {
-        foreach ($Mac in $MacAddress) {
-            $oldMac = $Mac
-            $Mac = $Mac -replace '-', '' #Replace Dash
-            $Mac = $Mac -replace ':', '' #Replace Colon
-            $Mac = $Mac -replace ';', '' #Replace semicolon
-            $Mac = $Mac -replace '/s', '' #Remove whitespace
-            $Mac = $Mac -replace ' ', '' #Remove whitespace
-            $Mac = $Mac -replace '\.', '' #Remove dots
-            $Mac = $Mac.trim() #Remove space at the beginning
-            $Mac = $Mac.trimend() #Remove space at the end
-            switch ($Case) {
-                'Upper' { $Mac = $mac.toupper() }
-                'Uppercase' { $Mac = $mac.toupper() }
-                'Lower' { $Mac = $mac.tolower() }
-                'Lowercase' { $Mac = $mac.tolower() }
-                'Ignore' { }
-                Default { }
-            }
-            if ($Separator -ne 'None') {
-                switch ($Split) {
-                    2 { $Mac = $Mac -replace '(..(?!$))', "`$1$Separator" }
-                    3 { $Mac = $Mac -replace '(...(?!$))', "`$1$Separator" }
-                    4 { $Mac = $Mac -replace '(....(?!$))', "`$1$Separator" }
-                    6 { $Mac = $Mac -replace '(......(?!$))', "`$1$Separator" }
-                    default { $Mac = $Mac -replace '(..(?!$))', "`$1$Separator" }
-                }
-            }
-            if (-not ($IncludeOriginal)) {
-                write-output -InputObject $Mac
-            } else {
-                $prop = @{ OriginalMac = $oldMac ; FormattedMac = $mac }
-                $obj = new-object -TypeName psobject -Property $prop
-                write-output -InputObject $obj
-            }
-        }
-    } #EndBlock Process
-    end {
-        Write-Verbose -Message "Ending $($MyInvocation.Mycommand)"
-    }
-}
-#endregion Format-MacAddress
+#endregion ConvertFrom-DistinguishedName
 
 #region Convert-SecondsToHumanReadable
 function Convert-SecondsToHumanReadable {
@@ -2194,12 +2056,16 @@ function Invoke-StandbyPrompt {
     .DESCRIPTION
         Using WPF to show a clean yes/no dialog. Language is detected automatically
         from Windows UI-culture (da-DK = danish, anything else = english).
+        Theme (light/dark) is detected automatically from the Windows app theme setting.
+        In Constrained Language Mode (where WPF is blocked) a console prompt is shown instead.
     .EXAMPLE
         Invoke-StandbyPrompt
     .EXAMPLE
         Invoke-StandbyPrompt -Language 'da'
     .EXAMPLE
         Invoke-StandbyPrompt -ShowLockButton
+    .EXAMPLE
+        Invoke-StandbyPrompt -Theme Dark
     #>
     [CmdletBinding()]
     param(
@@ -2208,21 +2074,130 @@ function Invoke-StandbyPrompt {
         [string]$Language,
 
         # Show an extra button to lock the computer.
-        [switch]$ShowLockButton
+        [switch]$ShowLockButton,
+
+        # Force theme: 'Light' or 'Dark'. Not set = auto-detecting from Windows.
+        [ValidateSet('Light', 'Dark')]
+        [string]$Theme
     )
+
+    # --- Language-detection ---
+    # Get-UICulture instead of [CultureInfo]::CurrentUICulture so it also works in CLM
+    if (-not $Language) {
+        $Language = if ((Get-UICulture).TwoLetterISOLanguageName -eq 'da') { 'da' } else { 'en' }
+    }
+
+    # --- Specific language definitions
+    $strings = @{
+        da = @{
+            AppTitle  = 'Strømstyring'
+            Heading   = 'Sæt computeren i standby?'
+            SubText   = 'Alle åbne programmer gemmes i hukommelsen.'
+            BtnYes    = 'Ja, standby'
+            BtnNo     = 'Nej tak'
+            BtnLock   = 'Lås skærm'
+            KeyYes    = 'J'
+            KeyNo     = 'N'
+            KeyLock   = 'L'
+            Default   = 'standard'
+        }
+        en = @{
+            AppTitle  = 'Power Management'
+            Heading   = 'Put the computer to sleep?'
+            SubText   = 'All open programs will be saved in memory.'
+            BtnYes    = 'Yes, sleep'
+            BtnNo     = 'No thanks'
+            BtnLock   = 'Lock screen'
+            KeyYes    = 'Y'
+            KeyNo     = 'N'
+            KeyLock   = 'L'
+            Default   = 'default'
+        }
+    }
+
+    $t = $strings[$Language]
+
+    # --- CLM fallback: WPF (Add-Type/XamlReader) is blocked, so ask in the console instead ---
+    if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+        $choices = "[$($t.KeyYes)] $($t.BtnYes)"
+        if ($ShowLockButton) { $choices += "  [$($t.KeyLock)] $($t.BtnLock)" }
+        $choices += "  [$($t.KeyNo)] $($t.BtnNo) ($($t.Default))"
+
+        Write-Host $t.Heading -ForegroundColor Cyan
+        Write-Host $t.SubText -ForegroundColor DarkGray
+
+        $answer = $null
+        while ($null -eq $answer) {
+            $key = "$(Read-Host $choices)".Trim()   # string-cast so a null input (e.g. EOF) doesn't throw
+            if ($key -eq '' -or $key -eq $t.KeyNo)                   { $answer = 'No' }
+            elseif ($key -eq $t.KeyYes)                              { $answer = 'Yes' }
+            elseif ($ShowLockButton -and $key -eq $t.KeyLock)        { $answer = 'Lock' }
+        }
+
+        if ($answer -eq 'Yes') {
+            rundll32.exe powrprof.dll, SetSuspendState 0, 1, 0
+        }
+        elseif ($answer -eq 'Lock') {
+            rundll32.exe user32.dll, LockWorkStation
+        }
+        return
+    }
 
     # --- Load WPF assemblies ---
     Add-Type -AssemblyName PresentationFramework
     Add-Type -AssemblyName PresentationCore
 
-
-    # --- Language-detection ---
-    if (-not $Language) {
-        $uiCulture = [System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName
-        $Language  = if ($uiCulture -eq 'da') { 'da' } else { 'en' }
+    # --- Theme-detection ---
+    if (-not $Theme) {
+        # AppsUseLightTheme: 0 = dark, 1 = light
+        $regVal = Get-ItemPropertyValue `
+            -Path  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' `
+            -Name  'AppsUseLightTheme' `
+            -ErrorAction SilentlyContinue
+        $Theme = if ($regVal -eq 0) { 'Dark' } else { 'Light' }
     }
 
-    # --- Specific language definitions
+    $colors = @{
+        Light = @{
+            WinBg         = '#ffffff'
+            WinBorder     = '#e0e0e0'
+            HeaderBg      = '#fafafa'
+            HeaderBorder  = '#eeeeee'
+            HeadingFg     = '#202124'
+            SubTextFg     = '#80868b'
+            TitleFg       = '#888888'
+            MoonFg        = '#000000'
+            BtnNoBg       = '#f1f3f4'
+            BtnNoFg       = '#3c4043'
+            BtnNoHover    = '#e2e4e7'
+            BtnNoPress    = '#d0d3d7'
+            BtnLockBg     = '#f8f0ff'
+            BtnLockFg     = '#6a0dad'
+            BtnLockHover  = '#edd9ff'
+            BtnLockPress  = '#dbb8ff'
+        }
+        Dark = @{
+            WinBg         = '#1e1e2e'
+            WinBorder     = '#313244'
+            HeaderBg      = '#181825'
+            HeaderBorder  = '#313244'
+            HeadingFg     = '#cdd6f4'
+            SubTextFg     = '#6c7086'
+            TitleFg       = '#a6adc8'
+            MoonFg        = '#cdd6f4'
+            BtnNoBg       = '#313244'
+            BtnNoFg       = '#cdd6f4'
+            BtnNoHover    = '#45475a'
+            BtnNoPress    = '#585b70'
+            BtnLockBg     = '#2d1b4e'
+            BtnLockFg     = '#cba6f7'
+            BtnLockHover  = '#3d2460'
+            BtnLockPress  = '#4e2d74'
+        }
+    }
+
+    $c = $colors[$Theme]
+
     $strings = @{
         da = @{
             AppTitle = 'Strømstyring'
@@ -2286,8 +2261,6 @@ function Invoke-StandbyPrompt {
         </Style>
 
         <Style x:Key="BtnNo" TargetType="Button">
-            <Setter Property="Background" Value="#f1f3f4"/>
-            <Setter Property="Foreground" Value="#3c4043"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -2300,21 +2273,11 @@ function Invoke-StandbyPrompt {
                         <Border Background="{TemplateBinding Background}" CornerRadius="6" BorderThickness="0">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#e2e4e7"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="#d0d3d7"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
         <Style x:Key="BtnLock" TargetType="Button">
-            <Setter Property="Background" Value="#f8f0ff"/>
-            <Setter Property="Foreground" Value="#6a0dad"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
@@ -2328,14 +2291,6 @@ function Invoke-StandbyPrompt {
                         <Border Background="{TemplateBinding Background}" CornerRadius="6" BorderThickness="0">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#edd9ff"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter Property="Background" Value="#dbb8ff"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -2367,7 +2322,7 @@ function Invoke-StandbyPrompt {
 
             <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
                         Margin="32,24,32,16">
-                <TextBlock Text="&#x1F319;" FontSize="32" HorizontalAlignment="Center" Margin="0,0,0,14"/>
+                <TextBlock x:Name="TxtMoon" Text="&#x1F319;" FontSize="32" HorizontalAlignment="Center" Margin="0,0,0,14"/>
                 <TextBlock x:Name="TxtHeading"
                            FontFamily="Segoe UI" FontSize="15" FontWeight="Medium"
                            Foreground="#202124" HorizontalAlignment="Center"
@@ -2391,6 +2346,50 @@ function Invoke-StandbyPrompt {
 
     $reader = [System.Xml.XmlNodeReader]::new($xaml)
     $window = [Windows.Markup.XamlReader]::Load($reader)
+
+    # Helper to convert a hex string to a SolidColorBrush
+    function ConvertTo-Brush([string]$hex) {
+        $col = [System.Windows.Media.ColorConverter]::ConvertFromString($hex)
+        [System.Windows.Media.SolidColorBrush]::new($col)
+    }
+
+    # Apply theme colors
+    $outerBorder = $window.Content
+    $outerBorder.Background   = ConvertTo-Brush $c.WinBg
+    $outerBorder.BorderBrush  = ConvertTo-Brush $c.WinBorder
+
+    $dragBar = $window.FindName('DragBar')
+    $dragBar.Background  = ConvertTo-Brush $c.HeaderBg
+    $dragBar.BorderBrush = ConvertTo-Brush $c.HeaderBorder
+
+    $window.FindName('TxtAppTitle').Foreground = ConvertTo-Brush $c.TitleFg
+    $window.FindName('TxtMoon').Foreground     = ConvertTo-Brush $c.MoonFg
+    $window.FindName('TxtHeading').Foreground  = ConvertTo-Brush $c.HeadingFg
+    $window.FindName('TxtSubText').Foreground  = ConvertTo-Brush $c.SubTextFg
+
+    $btnNo   = $window.FindName('BtnNo')
+    $btnLock = $window.FindName('BtnLock')
+
+    $btnNo.Background   = ConvertTo-Brush $c.BtnNoBg
+    $btnNo.Foreground   = ConvertTo-Brush $c.BtnNoFg
+    $btnLock.Background = ConvertTo-Brush $c.BtnLockBg
+    $btnLock.Foreground = ConvertTo-Brush $c.BtnLockFg
+
+    # Hover/press triggers are created dynamically so they use the theme colors
+    foreach ($btn in @(
+        @{ Ctrl = $btnNo;   Hover = $c.BtnNoHover;   Press = $c.BtnNoPress   }
+        @{ Ctrl = $btnLock; Hover = $c.BtnLockHover; Press = $c.BtnLockPress }
+    )) {
+        $ctrl = $btn.Ctrl
+        $hover = $btn.Hover
+        $press = $btn.Press
+        $ctrl.add_MouseEnter({ $ctrl.Background = ConvertTo-Brush $hover })
+        $ctrl.add_MouseLeave({ $ctrl.Background = ConvertTo-Brush $(
+            if ($ctrl.Name -eq 'BtnNo') { $c.BtnNoBg } else { $c.BtnLockBg }
+        ) })
+        $ctrl.add_PreviewMouseLeftButtonDown({ $ctrl.Background = ConvertTo-Brush $press })
+        $ctrl.add_PreviewMouseLeftButtonUp({   $ctrl.Background = ConvertTo-Brush $hover })
+    }
 
     # Insert localized texts
     $window.FindName('TxtAppTitle').Text = $t.AppTitle

@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.5.2-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -203,9 +203,11 @@ Wait for 10 seconds
 # Waits for 10 seconds or for a keystroke
 ```
 
-- **Invoke-PauseWithTimeout** - Show a graphical dialog asking the user if the computer should be set into standby.
+- **Invoke-StandbyPrompt** - Show a graphical dialog asking the user if the computer should be set into standby. Language and light/dark theme follow Windows automatically. In CLM a console prompt is shown instead.
 ```powershell
 Invoke-StandbyPrompt -ShowLockButton
+# Force dark theme and Danish texts
+Invoke-StandbyPrompt -Theme Dark -Language da
 ```
 
 - **Move-FilesUpOneLevel** - Moves files from 1st-level subfolders up into the parent folder, optionally removing folders left empty.
