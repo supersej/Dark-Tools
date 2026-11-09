@@ -1049,32 +1049,473 @@ function Get-IconLnkTarget {
 function Get-ImageInformation {
     <#
     .SYNOPSIS
-        Retrieves image information using Windows Image Acquisition (WIA) API.
+        Retrieves image information (dimensions, pixel depth, resolution and frames) from image files.
     .DESCRIPTION
-        Loads an image file using the Windows Image Acquisition COM object and returns image properties.
+        Reads the image properties directly from the file header instead of using the
+        Windows Image Acquisition (WIA) COM object, so the function works in
+        Constrained Language Mode (CLM).
+
+        Supported formats (detected from the file content, not the file extension):
+        BMP, GIF, JPEG, PNG and TIFF.
+
+        Resolution (DPI) is read from JFIF/EXIF (JPEG), the pHYs chunk (PNG), the BMP header
+        and the TIFF tags. If the file does not store a resolution, the value is $null.
+
+        GIF and TIFF files are read completely, since the frame count (GIF) and the TIFF
+        directory (IFD) can be located anywhere in the file. Other formats only read the
+        first 64 KB (JPEG falls back to reading the whole file if the frame header is
+        located further into the file).
     .PARAMETER Filepath
-        Specifies the path to the image file. Accepts pipeline input.
+        Specifies the path to one or more image files. Accepts pipeline input,
+        including FileInfo objects from Get-ChildItem.
     .OUTPUTS
-        Returns a WIA image object with properties like width, height, etc.
+        PSCustomObject with the properties Path, Format, FileExtension, FormatID, Width, Height,
+        PixelDepth, HorizontalResolution, VerticalResolution, IsIndexedPixelFormat,
+        IsAlphaPixelFormat, IsExtendedPixelFormat, IsAnimated and FrameCount.
     .EXAMPLE
         Get-ImageInformation -Filepath "C:\Pictures\photo.jpg"
-        Returns image object for the specified photo.
+        Returns image information for the specified photo.
     .EXAMPLE
-        "C:\Pictures\photo.jpg" | Get-ImageInformation
+        "C:\Pictures\photo.jpg" | Get-ImageInformation | Select-Object Height, Width, PixelDepth
         Gets image information via pipeline.
+    .EXAMPLE
+        Get-ChildItem "C:\Pictures" -File | Get-ImageInformation | Format-Table Path, Width, Height, HorizontalResolution
+        Gets image information for all images in a folder. Unsupported files are skipped with a warning.
+    .NOTES
+        Property names match the WIA ImageFile object used in earlier versions of the function.
+        Not available compared to WIA: the Properties collection (EXIF tags), ARGBData,
+        FileData and ActiveFrame.
     #>
+    [CmdletBinding()]
     param(
-        [Parameter(
-            Mandatory=$True,
-            Position=0,
-            ValueFromPipeline=$true,
-            ValueFromPipelineByPropertyName=$true
-        )]
-        $Filepath
+        [Parameter(Mandatory, Position = 0, ValueFromPipeline, ValueFromPipelineByPropertyName)]
+        [Alias('FullName', 'Path')]
+        [string[]]$Filepath
     )
-    $image  = New-Object -ComObject Wia.ImageFile
-    $image.loadfile($filepath)
-    return $image
+
+    begin {
+        #region Helpers - read integers/text from a byte array (CLM safe, no .NET calls)
+        function Read-ImgU16 {
+            param($Bytes, [int]$Offset, [bool]$LittleEndian)
+            if ($Offset -lt 0 -or ($Offset + 2) -gt $Bytes.Length) { return 0 }
+            if ($LittleEndian) {
+                return ([int]$Bytes[$Offset]) -bor (([int]$Bytes[$Offset + 1]) -shl 8)
+            }
+            return (([int]$Bytes[$Offset]) -shl 8) -bor ([int]$Bytes[$Offset + 1])
+        }
+
+        function Read-ImgU32 {
+            param($Bytes, [int]$Offset, [bool]$LittleEndian)
+            if ($Offset -lt 0 -or ($Offset + 4) -gt $Bytes.Length) { return [long]0 }
+            $b0 = [long]$Bytes[$Offset]
+            $b1 = [long]$Bytes[$Offset + 1]
+            $b2 = [long]$Bytes[$Offset + 2]
+            $b3 = [long]$Bytes[$Offset + 3]
+            if ($LittleEndian) {
+                return $b0 -bor ($b1 -shl 8) -bor ($b2 -shl 16) -bor ($b3 -shl 24)
+            }
+            return ($b0 -shl 24) -bor ($b1 -shl 16) -bor ($b2 -shl 8) -bor $b3
+        }
+
+        function Read-ImgAscii {
+            param($Bytes, [int]$Offset, [int]$Count)
+            if ($Offset -lt 0 -or ($Offset + $Count) -gt $Bytes.Length) { return '' }
+            return -join [char[]]($Bytes[$Offset..($Offset + $Count - 1)])
+        }
+
+        function ConvertTo-ImgDpi {
+            param([double]$Value)
+            if ($Value -le 0) { return $null }
+            return [int]$Value
+        }
+        #endregion
+
+        #region TIFF directory reader (used for TIFF files and EXIF data in JPEG)
+        function Read-ImgTiff {
+            param($Bytes, [int]$Base)
+            $len = $Bytes.Length
+            if (($Base + 8) -gt $len) { return $null }
+
+            $le   = ($Bytes[$Base] -eq 0x49) # 'II' = little endian, 'MM' = big endian
+            $info = @{ Frames = 0; Samples = 1; BitsFirst = 1; BitsCount = 1; BitsSum = 1; ResUnit = 2 }
+            $seen = @{}
+            $off  = Read-ImgU32 $Bytes ($Base + 4) $le
+
+            while ($off -gt 0 -and ($Base + $off + 2) -le $len -and -not $seen.ContainsKey($off)) {
+                $seen[$off] = $true
+                $ifd   = [int]($Base + $off)
+                $count = Read-ImgU16 $Bytes $ifd $le
+
+                # Only the first directory (page) is read for properties, the rest are counted
+                if ($info.Frames -eq 0) {
+                    for ($i = 0; $i -lt $count; $i++) {
+                        $e = $ifd + 2 + (12 * $i)
+                        if (($e + 12) -gt $len) { break }
+
+                        $tag  = Read-ImgU16 $Bytes $e $le
+                        $type = Read-ImgU16 $Bytes ($e + 2) $le
+                        $cnt  = Read-ImgU32 $Bytes ($e + 4) $le
+
+                        $size = 1
+                        if ($type -eq 3) { $size = 2 } elseif ($type -eq 4) { $size = 4 } elseif ($type -eq 5) { $size = 8 }
+
+                        # Values larger than 4 bytes are stored at an offset
+                        $vpos = $e + 8
+                        if (($size * $cnt) -gt 4) {
+                            $ptr = Read-ImgU32 $Bytes ($e + 8) $le
+                            if (($Base + $ptr) -ge $len) { continue }
+                            $vpos = [int]($Base + $ptr)
+                        }
+
+                        $value = 0
+                        if ($type -eq 3) { $value = Read-ImgU16 $Bytes $vpos $le }
+                        elseif ($type -eq 4) { $value = Read-ImgU32 $Bytes $vpos $le }
+                        elseif ($vpos -lt $len) { $value = [int]$Bytes[$vpos] }
+
+                        if ($tag -eq 256) { $info.Width = $value }
+                        elseif ($tag -eq 257) { $info.Height = $value }
+                        elseif ($tag -eq 258) {
+                            $sum = 0
+                            for ($j = 0; $j -lt $cnt -and $j -lt 16; $j++) {
+                                $sum += Read-ImgU16 $Bytes ($vpos + (2 * $j)) $le
+                            }
+                            $info.BitsFirst = $value
+                            $info.BitsCount = $cnt
+                            $info.BitsSum   = $sum
+                        }
+                        elseif ($tag -eq 262) { $info.Photometric = $value }
+                        elseif ($tag -eq 277) { $info.Samples = $value }
+                        elseif ($tag -eq 338) { $info.ExtraSamples = $true }
+                        elseif ($tag -eq 282 -or $tag -eq 283) {
+                            $num = Read-ImgU32 $Bytes $vpos $le
+                            $den = Read-ImgU32 $Bytes ($vpos + 4) $le
+                            if ($den -gt 0) {
+                                if ($tag -eq 282) { $info.XRes = $num / $den } else { $info.YRes = $num / $den }
+                            }
+                        }
+                        elseif ($tag -eq 296) { $info.ResUnit = $value }
+                    }
+                }
+
+                $info.Frames = $info.Frames + 1
+                $off = Read-ImgU32 $Bytes ($ifd + 2 + (12 * $count)) $le
+            }
+            return $info
+        }
+
+        function ConvertFrom-ImgTiffResolution {
+            param($Tiff, [string]$Key)
+            $factor = 0
+            if ($Tiff.ResUnit -eq 2) { $factor = 1 } elseif ($Tiff.ResUnit -eq 3) { $factor = 2.54 }
+            if ($factor -eq 0 -or -not $Tiff[$Key]) { return $null }
+            return ConvertTo-ImgDpi ($Tiff[$Key] * $factor)
+        }
+        #endregion
+
+        #region Format parsers
+        function Read-ImgPng {
+            param($Bytes)
+            $r = @{ FrameCount = 1; IsAnimated = $false }
+            $len = $Bytes.Length
+            $pos = 8
+            $colorType = 0
+            $bitDepth  = 0
+            $trns      = $false
+
+            while (($pos + 8) -le $len) {
+                $chunkLen = Read-ImgU32 $Bytes $pos
+                $type     = Read-ImgAscii $Bytes ($pos + 4) 4
+                $d        = $pos + 8
+
+                if ($type -ceq 'IHDR') {
+                    $r.Width   = Read-ImgU32 $Bytes $d
+                    $r.Height  = Read-ImgU32 $Bytes ($d + 4)
+                    $bitDepth  = [int]$Bytes[$d + 8]
+                    $colorType = [int]$Bytes[$d + 9]
+                }
+                elseif ($type -ceq 'pHYs' -and $Bytes[$d + 8] -eq 1) {
+                    # Unit 1 = pixels per meter
+                    $r.HorizontalResolution = ConvertTo-ImgDpi ((Read-ImgU32 $Bytes $d) * 0.0254)
+                    $r.VerticalResolution   = ConvertTo-ImgDpi ((Read-ImgU32 $Bytes ($d + 4)) * 0.0254)
+                }
+                elseif ($type -ceq 'acTL') {
+                    # Animated PNG (APNG)
+                    $r.FrameCount = Read-ImgU32 $Bytes $d
+                    $r.IsAnimated = ($r.FrameCount -gt 1)
+                }
+                elseif ($type -ceq 'tRNS') { $trns = $true }
+                elseif ($type -ceq 'IDAT' -or $type -ceq 'IEND') { break }
+
+                $next = $d + $chunkLen + 4
+                if ($next -ge $len) { break }
+                $pos = [int]$next
+            }
+
+            $channels = @{ 0 = 1; 2 = 3; 3 = 1; 4 = 2; 6 = 4 }[$colorType]
+            if (-not $channels) { $channels = 1 }
+
+            $r.PixelDepth            = if ($colorType -eq 3) { $bitDepth } else { $bitDepth * $channels }
+            $r.IsIndexedPixelFormat  = ($colorType -eq 3)
+            $r.IsAlphaPixelFormat    = ($colorType -eq 4 -or $colorType -eq 6 -or $trns)
+            $r.IsExtendedPixelFormat = ($bitDepth -gt 8)
+            return $r
+        }
+
+        function Read-ImgJpeg {
+            param($Bytes)
+            $r = @{
+                FrameCount            = 1
+                IsAnimated            = $false
+                IsIndexedPixelFormat  = $false
+                IsAlphaPixelFormat    = $false
+                IsExtendedPixelFormat = $false
+            }
+            $len   = $Bytes.Length
+            $pos   = 2
+            $jfifX = $null
+            $jfifY = $null
+            $exif  = $null
+
+            while (($pos + 4) -le $len) {
+                if ($Bytes[$pos] -ne 0xFF) { break }
+                $marker = [int]$Bytes[$pos + 1]
+
+                if ($marker -eq 0xFF) { $pos++; continue } # Fill byte
+                if ($marker -eq 0x01 -or ($marker -ge 0xD0 -and $marker -le 0xD8)) { $pos += 2; continue } # Markers without length
+                if ($marker -eq 0xD9 -or $marker -eq 0xDA) { break } # End of image / start of scan
+
+                $segLen = Read-ImgU16 $Bytes ($pos + 2)
+                $d      = $pos + 4
+
+                if ($marker -eq 0xE0 -and (Read-ImgAscii $Bytes $d 5) -eq "JFIF`0") {
+                    # Density unit: 0 = aspect ratio only, 1 = DPI, 2 = dots per cm
+                    $units  = [int]$Bytes[$d + 7]
+                    $factor = 0
+                    if ($units -eq 1) { $factor = 1 } elseif ($units -eq 2) { $factor = 2.54 }
+                    if ($factor -gt 0) {
+                        $jfifX = ConvertTo-ImgDpi ((Read-ImgU16 $Bytes ($d + 8)) * $factor)
+                        $jfifY = ConvertTo-ImgDpi ((Read-ImgU16 $Bytes ($d + 10)) * $factor)
+                    }
+                }
+                elseif ($marker -eq 0xE1 -and $null -eq $exif -and (Read-ImgAscii $Bytes $d 6) -eq "Exif`0`0") {
+                    $exif = Read-ImgTiff $Bytes ($d + 6)
+                }
+                elseif ($marker -ge 0xC0 -and $marker -le 0xCF -and $marker -ne 0xC4 -and $marker -ne 0xC8 -and $marker -ne 0xCC) {
+                    # Start of frame (SOFn)
+                    if (($d + 6) -le $len) {
+                        $precision  = [int]$Bytes[$d]
+                        $r.Height   = Read-ImgU16 $Bytes ($d + 1)
+                        $r.Width    = Read-ImgU16 $Bytes ($d + 3)
+                        $components = [int]$Bytes[$d + 5]
+                        $r.PixelDepth            = $precision * $components
+                        $r.IsExtendedPixelFormat = ($precision -gt 8)
+                    }
+                    break
+                }
+
+                $pos = $pos + 2 + $segLen
+            }
+
+            if ($null -ne $jfifX) {
+                $r.HorizontalResolution = $jfifX
+                $r.VerticalResolution   = $jfifY
+            }
+            elseif ($exif) {
+                $r.HorizontalResolution = ConvertFrom-ImgTiffResolution $exif 'XRes'
+                $r.VerticalResolution   = ConvertFrom-ImgTiffResolution $exif 'YRes'
+            }
+            return $r
+        }
+
+        function Read-ImgGif {
+            param($Bytes)
+            $len = $Bytes.Length
+            $r = @{
+                Width                 = Read-ImgU16 $Bytes 6 $true
+                Height                = Read-ImgU16 $Bytes 8 $true
+                PixelDepth            = 8
+                IsIndexedPixelFormat  = $true
+                IsAlphaPixelFormat    = $false
+                IsExtendedPixelFormat = $false
+            }
+
+            # Skip the global color table
+            $packed = [int]$Bytes[10]
+            $pos = 13
+            if ($packed -band 0x80) { $pos += 3 * (1 -shl (($packed -band 7) + 1)) }
+
+            $frames = 0
+            while ($pos -lt $len) {
+                $block = [int]$Bytes[$pos]
+                if ($block -eq 0x21) {
+                    # Extension - Graphic Control Extension holds the transparency flag
+                    if ($Bytes[$pos + 1] -eq 0xF9 -and ($Bytes[$pos + 3] -band 1)) { $r.IsAlphaPixelFormat = $true }
+                    $pos += 2
+                }
+                elseif ($block -eq 0x2C) {
+                    # Image descriptor = one frame
+                    $frames++
+                    $localPacked = [int]$Bytes[$pos + 9]
+                    $pos += 10
+                    if ($localPacked -band 0x80) { $pos += 3 * (1 -shl (($localPacked -band 7) + 1)) }
+                    $pos++ # LZW minimum code size
+                }
+                else {
+                    break # Trailer (0x3B) or unknown data
+                }
+
+                # Skip data sub-blocks
+                while ($pos -lt $len) {
+                    $size = [int]$Bytes[$pos]
+                    $pos += $size + 1
+                    if ($size -eq 0) { break }
+                }
+            }
+
+            if ($frames -lt 1) { $frames = 1 }
+            $r.FrameCount = $frames
+            $r.IsAnimated = ($frames -gt 1)
+            return $r
+        }
+
+        function Read-ImgBmp {
+            param($Bytes)
+            $r = @{ FrameCount = 1; IsAnimated = $false; IsExtendedPixelFormat = $false; IsAlphaPixelFormat = $false }
+            $headerSize = Read-ImgU32 $Bytes 14 $true
+
+            if ($headerSize -eq 12) {
+                # BITMAPCOREHEADER (OS/2)
+                $r.Width  = Read-ImgU16 $Bytes 18 $true
+                $r.Height = Read-ImgU16 $Bytes 20 $true
+                $bpp      = Read-ImgU16 $Bytes 24 $true
+            }
+            else {
+                $w = Read-ImgU32 $Bytes 18 $true
+                $h = Read-ImgU32 $Bytes 22 $true
+                if ($w -gt 0x7FFFFFFF) { $w = 0x100000000 - $w }
+                if ($h -gt 0x7FFFFFFF) { $h = 0x100000000 - $h } # Negative height = top-down bitmap
+                $r.Width  = $w
+                $r.Height = $h
+                $bpp         = Read-ImgU16 $Bytes 28 $true
+                $compression = Read-ImgU32 $Bytes 30 $true
+
+                if ($headerSize -ge 40) {
+                    # Pixels per meter
+                    $r.HorizontalResolution = ConvertTo-ImgDpi ((Read-ImgU32 $Bytes 38 $true) * 0.0254)
+                    $r.VerticalResolution   = ConvertTo-ImgDpi ((Read-ImgU32 $Bytes 42 $true) * 0.0254)
+                }
+                if ($headerSize -ge 56 -and ($compression -eq 3 -or $compression -eq 6)) {
+                    # BI_BITFIELDS / BI_ALPHABITFIELDS with an alpha mask
+                    $r.IsAlphaPixelFormat = ((Read-ImgU32 $Bytes 66 $true) -ne 0)
+                }
+            }
+
+            $r.PixelDepth           = $bpp
+            $r.IsIndexedPixelFormat = ($bpp -le 8)
+            return $r
+        }
+
+        function Read-ImgTiffFile {
+            param($Bytes)
+            $r = @{ IsAnimated = $false }
+            $t = Read-ImgTiff $Bytes 0
+            if (-not $t) { return $r }
+
+            $r.Width  = $t.Width
+            $r.Height = $t.Height
+            $r.PixelDepth = if ($t.BitsCount -ge $t.Samples) { $t.BitsSum } else { $t.BitsFirst * $t.Samples }
+            $r.IsIndexedPixelFormat  = ($t.Photometric -eq 3)
+            $r.IsAlphaPixelFormat    = [bool]$t.ExtraSamples
+            $r.IsExtendedPixelFormat = ($t.BitsFirst -gt 8)
+            $r.FrameCount            = $t.Frames # Number of pages
+            $r.HorizontalResolution  = ConvertFrom-ImgTiffResolution $t 'XRes'
+            $r.VerticalResolution    = ConvertFrom-ImgTiffResolution $t 'YRes'
+            return $r
+        }
+        #endregion
+
+        # Extension and FormatID match the values from WIA (GDI+ image format GUIDs)
+        $formatInfo = @{
+            BMP  = @{ Ext = 'bmp'; Id = '{B96B3CAB-0728-11D3-9D7B-0000F81EF32E}' }
+            JPEG = @{ Ext = 'jpg'; Id = '{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}' }
+            PNG  = @{ Ext = 'png'; Id = '{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}' }
+            GIF  = @{ Ext = 'gif'; Id = '{B96B3CB0-0728-11D3-9D7B-0000F81EF32E}' }
+            TIFF = @{ Ext = 'tif'; Id = '{B96B3CB1-0728-11D3-9D7B-0000F81EF32E}' }
+        }
+    }
+
+    process {
+        foreach ($file in $Filepath) {
+            $item = Get-Item -LiteralPath $file -ErrorAction SilentlyContinue
+            if (-not $item -or $item.PSIsContainer) {
+                Write-Error "File not found: $file"
+                continue
+            }
+
+            $bytes = Get-Content -LiteralPath $item.FullName -AsByteStream -TotalCount 65536 -ReadCount 0
+            if ($null -eq $bytes -or $bytes.Length -lt 16) {
+                Write-Warning "'$($item.FullName)' is too small to be a supported image."
+                continue
+            }
+
+            # Detect format from the file signature
+            $sig4   = Read-ImgAscii $bytes 0 4
+            $format = $null
+            if ($bytes[0] -eq 0x89 -and (Read-ImgAscii $bytes 1 3) -ceq 'PNG') { $format = 'PNG' }
+            elseif ($bytes[0] -eq 0xFF -and $bytes[1] -eq 0xD8) { $format = 'JPEG' }
+            elseif ($sig4 -ceq 'GIF8') { $format = 'GIF' }
+            elseif ((Read-ImgAscii $bytes 0 2) -ceq 'BM') { $format = 'BMP' }
+            elseif ($sig4 -ceq "II*`0" -or $sig4 -ceq "MM`0*") { $format = 'TIFF' }
+            else {
+                Write-Warning "'$($item.FullName)' is not a supported image format (BMP, GIF, JPEG, PNG, TIFF)."
+                continue
+            }
+
+            # GIF (frame count) and TIFF (directory can be anywhere) need the whole file
+            if (($format -eq 'GIF' -or $format -eq 'TIFF') -and $item.Length -gt $bytes.Length) {
+                $bytes = Get-Content -LiteralPath $item.FullName -AsByteStream -Raw
+            }
+
+            $r = $null
+            if ($format -eq 'PNG') { $r = Read-ImgPng $bytes }
+            elseif ($format -eq 'JPEG') { $r = Read-ImgJpeg $bytes }
+            elseif ($format -eq 'GIF') { $r = Read-ImgGif $bytes }
+            elseif ($format -eq 'BMP') { $r = Read-ImgBmp $bytes }
+            elseif ($format -eq 'TIFF') { $r = Read-ImgTiffFile $bytes }
+
+            # JPEG: frame header was not within the first 64 KB (e.g. large EXIF thumbnail) - read the whole file
+            if ($format -eq 'JPEG' -and $null -eq $r.Width -and $item.Length -gt $bytes.Length) {
+                $bytes = Get-Content -LiteralPath $item.FullName -AsByteStream -Raw
+                $r = Read-ImgJpeg $bytes
+            }
+
+            if (-not $r.Width -or -not $r.Height) {
+                Write-Warning "Could not read the image dimensions from '$($item.FullName)'. The file may be truncated or corrupt."
+            }
+
+            # New-Object PSObject instead of [PSCustomObject] cast for CLM compliance
+            $properties = @{
+                Path                  = $item.FullName
+                Format                = $format
+                FileExtension         = $formatInfo[$format].Ext
+                FormatID              = $formatInfo[$format].Id
+                Width                 = $r.Width
+                Height                = $r.Height
+                PixelDepth            = $r.PixelDepth
+                HorizontalResolution  = $r.HorizontalResolution
+                VerticalResolution    = $r.VerticalResolution
+                IsIndexedPixelFormat  = $r.IsIndexedPixelFormat
+                IsAlphaPixelFormat    = $r.IsAlphaPixelFormat
+                IsExtendedPixelFormat = $r.IsExtendedPixelFormat
+                IsAnimated            = $r.IsAnimated
+                FrameCount            = $r.FrameCount
+            }
+            New-Object -TypeName PSObject -Property $properties |
+                Select-Object Path, Format, FileExtension, FormatID, Width, Height, PixelDepth,
+                    HorizontalResolution, VerticalResolution, IsIndexedPixelFormat,
+                    IsAlphaPixelFormat, IsExtendedPixelFormat, IsAnimated, FrameCount
+        }
+    }
 }
 #endregion Get-ImageInformation
 

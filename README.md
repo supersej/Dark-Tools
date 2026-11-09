@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.5.3-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -90,13 +90,16 @@ v0.96.1
 C:\Program Files\LibreOffice\program\scalc.exe
 ```
 
-- **Get-ImageInformation** - Retrieves image properties using Windows Image Acquisition (WIA) API.
+- **Get-ImageInformation** - Reads image dimensions, pixel depth, resolution (DPI) and frame count directly from the file header (BMP, GIF, JPEG, PNG, TIFF). Works in Constrained Language Mode.
 ```powershell
 Get-ImageInformation -Filepath "C:\Windows\Wallpapers\super_resolution\computer_keyboard_higher_res.jpg" | Select-Object Height, Width, PixelDepth
 
 Height Width PixelDepth
 ------ ----- ----------
   3375  6000         24
+```
+```powershell
+Get-ChildItem "C:\Pictures" -File | Get-ImageInformation | Format-Table Path, Width, Height, HorizontalResolution
 ```
 
 - **Get-LastUserLogon** - Retrieves the last logon time and details for a specific user from Security event log.
