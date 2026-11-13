@@ -3057,10 +3057,14 @@ function Set-CodeSignature {
                 continue
             }
 
-            if ($PSCmdlet.ShouldProcess($resolved, "Sign with $($cert.Subject)")) {
-                $result = Set-AuthenticodeSignature -LiteralPath $resolved -Certificate $cert `
-                    -HashAlgorithm SHA256 -TimestampServer $TimestampServer
+            # No $PSCmdlet.ShouldProcess() here - method calls on PSCmdlet are blocked in CLM.
+            # Set-AuthenticodeSignature handles -WhatIf/-Confirm itself; the preference
+            # variables are passed on automatically because of SupportsShouldProcess.
+            $result = Set-AuthenticodeSignature -LiteralPath $resolved -Certificate $cert `
+                -HashAlgorithm SHA256 -TimestampServer $TimestampServer
 
+            # $result is $null under -WhatIf or when -Confirm is declined
+            if ($result) {
                 # New-Object PSObject instead of [PSCustomObject] cast for CLM compatibility
                 New-Object -TypeName PSObject -Property @{
                     File          = $resolved
