@@ -4175,9 +4175,5 @@ function Import-Ods {
 
 
 Set-Alias -Name Import-Calc -Value Import-Ods
-Set-Alias -Name Export-Calc -Value Export-Ods
-Set-Alias -Name New-Calc -Value New-Ods
-Set-Alias -Name Update-Calc -Value Update-Ods
-Set-Alias -Name Remove-Calc -Value Remove-Ods
 #Set-Alias -Name Clear-History -Value Invoke-CleanupHistory
 Set-Alias -Name Pause-WithTimeout -Value Invoke-PauseWithTimeout

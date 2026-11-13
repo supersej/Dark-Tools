@@ -8,7 +8,7 @@
 
 @{
     RootModule          = 'Dark-Tools.psm1' # Script module or binary module file associated with this manifest.
-    ModuleVersion       = '1.7.0' # Version number of this module.
+    ModuleVersion       = '1.7.1' # Version number of this module.
     GUID                = '88d5a1fe-4f3b-45bd-ae30-c5d812626165' # ID used to uniquely identify this module
     Author              = 'Daniel Ravnholt' # Author of this module
     CompanyName         = 'Dark Enterprise' # Company or vendor of this module
@@ -19,10 +19,55 @@
     # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
     #FunctionsToExport = 'Invoke-CleanupHistory', 'Install-Notion', 'Update-Notion'
     #FunctionsToExport = @('Invoke-CleanupHistory', 'Install-Notion', 'Update-Notion')
-    FunctionsToExport = '*'
+    FunctionsToExport = @(
+        'Convert-SecondsToHumanReadable',
+        'ConvertFrom-CanonicalUser',
+        'ConvertFrom-DistinguishedName',
+        'Find-MSIBrokenSources',
+        'Format-Bytes',
+        'Format-MacAddress',
+        'Get-CMTraceLog',
+        'Get-ComputerAdGroups',
+        'Get-ExecutableArchitecture',
+        'Get-FileViaExplorer',
+        'Get-FolderSize',
+        'Get-GithubData',
+        'Get-IconLnkTarget',
+        'Get-ImageInformation',
+        'Get-LoggedOnUser',
+        'Get-ProcessOwner',
+        'Get-RegistryUninstallKey',
+        'Get-Software',
+        'Get-UserAdGroups',
+        'Get-WanIp',
+        'Import-Ods',
+        'Import-TaskXml',
+        'Install-Chocolatey',
+        'Install-Notion',
+        'Invoke-CleanupHistory',
+        'Invoke-PauseWithTimeout',
+        'Invoke-StandbyPrompt',
+        'Move-FilesUpOneLevel',
+        'ProcessingAnimation',
+        'Search-FileContent',
+        'Set-CodeSignature',
+        'Set-ScheduledTaskMSA',
+        'Show-Calendar',
+        'Test-NetConnectionContinuous',
+        'Test-Numeric',
+        'Test-PendingReboot',
+        'Update-DarkTools',
+        'Update-Notion',
+        'Watch-FileChange',
+        'Watch-Network',
+        'Write-CheckFailed',
+        'Write-CheckSucces',
+        'Write-Log',
+        'Write-ToLog'
+    )
     CmdletsToExport   = @()
     VariablesToExport = @()
-    AliasesToExport   = 'Import-Calc', 'Export-Calc', 'New-Calc', 'Update-Calc', 'Remove-Calc', 'Pause-WithTimeout'
+    AliasesToExport   = 'Import-Calc', 'Pause-WithTimeout'
 
     PrivateData = @{
         PSData = @{
