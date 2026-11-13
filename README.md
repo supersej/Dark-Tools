@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.6.2-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.7.0-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -296,6 +296,20 @@ Test-PendingReboot
 RebootRequired Reasons
 -------------- -------
           True Component Based Servicing, Pending file rename operations
+```
+
+- **Update-DarkTools** - Checks the PowerShell Gallery for a newer version of Dark-Tools and updates the installed module. Uses PSResourceGet (PowerShell 7.4+). Scope is detected from the install location. Older versions are removed after the update unless -KeepOld is used. Supports -WhatIf and -CheckOnly.
+```powershell
+Update-DarkTools -CheckOnly
+
+Name       InstalledVersion LatestVersion UpdateAvailable InstalledLocation
+----       ---------------- ------------- --------------- -----------------
+Dark-Tools 1.6.2            1.7.0                    True C:\Program Files\PowerShell\Modules
+```
+```powershell
+Update-DarkTools            # update if a newer version exists, remove older versions
+Update-DarkTools -KeepOld   # update and keep older versions side by side
+Update-DarkTools -WhatIf    # show what would be updated and removed
 ```
 
 - **Update-Notion** - Updates Notion application to the latest version.

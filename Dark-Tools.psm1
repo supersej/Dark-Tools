@@ -3440,6 +3440,175 @@ function Test-PendingReboot {
 }
 #endregion Test-PendingReboot
 
+#region Update-DarkTools
+function Update-DarkTools {
+    <#
+    .SYNOPSIS
+        Checks the PowerShell Gallery for a newer version of Dark-Tools and installs it.
+    .DESCRIPTION
+        Compares the highest installed version of Dark-Tools with the latest stable version
+        in the PowerShell Gallery and updates the module if a newer version is available.
+        Uses Microsoft.PowerShell.PSResourceGet (ships with PowerShell 7.4+), which needs
+        no .NET SDK.
+
+        The install scope is detected from where the module is installed (Program Files =
+        AllUsers, otherwise CurrentUser) unless -Scope is given. AllUsers requires an
+        elevated session.
+
+        Supports -WhatIf (handled by the function) and -Confirm (passed on to Update-PSResource).
+        Older versions in the same scope are removed after a successful update, unless
+        -KeepOld is given. A new PowerShell session is needed before the new version is used.
+    .PARAMETER CheckOnly
+        Only checks for a newer version and returns the result. Nothing is installed.
+    .PARAMETER Scope
+        CurrentUser or AllUsers. If omitted, the scope is detected from the install location.
+    .PARAMETER KeepOld
+        Keeps older installed versions. By default, older versions in the same scope are
+        removed after a successful update (or when the latest version is already installed).
+    .OUTPUTS
+        With -CheckOnly: PSObject with Name, InstalledVersion, LatestVersion, UpdateAvailable
+        and InstalledLocation. Otherwise status messages only.
+    .EXAMPLE
+        Update-DarkTools -CheckOnly
+        Shows the installed and latest version, and whether an update is available.
+    .EXAMPLE
+        Update-DarkTools
+        Updates Dark-Tools if a newer version is available and removes older versions.
+    .EXAMPLE
+        Update-DarkTools -KeepOld
+        Updates Dark-Tools and keeps the older versions installed side by side.
+    .EXAMPLE
+        Update-DarkTools -WhatIf
+        Shows what would be updated and removed without changing anything.
+    .EXAMPLE
+        Update-DarkTools -Scope AllUsers
+        Updates the system-wide installation (requires an elevated session).
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [switch]$CheckOnly,
+
+        [ValidateSet('CurrentUser', 'AllUsers')]
+        [string]$Scope,
+
+        [switch]$KeepOld
+    )
+
+    $moduleName = 'Dark-Tools'
+
+    if (-not (Get-Command Find-PSResource -ErrorAction SilentlyContinue)) {
+        throw 'Microsoft.PowerShell.PSResourceGet was not found. It ships with PowerShell 7.4+, or install it with: Install-Module Microsoft.PowerShell.PSResourceGet'
+    }
+
+    # Highest installed version
+    $installed = Get-InstalledPSResource -Name $moduleName -ErrorAction SilentlyContinue |
+        Sort-Object Version -Descending | Select-Object -First 1
+
+    if (-not $installed) {
+        Write-Error "$moduleName is not installed from a repository. Install it with: Install-PSResource $moduleName -Repository PSGallery"
+        return
+    }
+
+    # Latest stable version in the PowerShell Gallery
+    try {
+        $latest = Find-PSResource -Name $moduleName -Repository PSGallery -ErrorAction Stop
+    }
+    catch {
+        Write-Error "Could not look up $moduleName in the PowerShell Gallery: $_"
+        return
+    }
+
+    # [version] is an allowed type in CLM
+    $installedVersion = [version]$installed.Version
+    $latestVersion    = [version]$latest.Version
+    $updateAvailable  = $latestVersion -gt $installedVersion
+
+    if ($CheckOnly) {
+        # New-Object PSObject instead of [PSCustomObject] for CLM compatibility
+        return New-Object -TypeName PSObject -Property @{
+            Name              = $moduleName
+            InstalledVersion  = $installedVersion
+            LatestVersion     = $latestVersion
+            UpdateAvailable   = $updateAvailable
+            InstalledLocation = $installed.InstalledLocation
+        } | Select-Object Name, InstalledVersion, LatestVersion, UpdateAvailable, InstalledLocation
+    }
+
+    # Detect scope from install location if not given
+    if (-not $Scope) {
+        $Scope = if ($installed.InstalledLocation -like "$env:ProgramFiles*") { 'AllUsers' } else { 'CurrentUser' }
+        Write-Verbose "Detected scope: $Scope ($($installed.InstalledLocation))"
+    }
+
+    # Older versions in the same scope to remove afterwards (unless -KeepOld)
+    $oldVersions = @()
+    if (-not $KeepOld) {
+        $oldVersions = @(Get-InstalledPSResource -Name $moduleName -Scope $Scope -ErrorAction SilentlyContinue |
+            Where-Object { [version]$_.Version -lt $latestVersion } |
+            Sort-Object Version)
+    }
+
+    if (-not $updateAvailable -and $oldVersions.Count -eq 0) {
+        Write-Host "$moduleName $installedVersion is the latest version." -ForegroundColor Green
+        return
+    }
+
+    # AllUsers needs admin - whoami.exe instead of [WindowsPrincipal] for CLM compatibility
+    if ($Scope -eq 'AllUsers' -and -not ((whoami.exe /groups) -match 'S-1-16-12288')) {
+        throw "Updating $moduleName for AllUsers requires an elevated session."
+    }
+
+    # -WhatIf is handled here: Update-PSResource -WhatIf fails trying to read metadata from a
+    # package it never downloaded. $PSCmdlet.ShouldProcess() can't be used - blocked in CLM.
+    if ($WhatIfPreference) {
+        if ($updateAvailable) {
+            Write-Host "What if: Updating $moduleName $installedVersion -> $latestVersion ($Scope)"
+        }
+        foreach ($old in $oldVersions) {
+            Write-Host "What if: Removing $moduleName $($old.Version) ($Scope)"
+        }
+        return
+    }
+
+    if ($updateAvailable) {
+        Write-Host "Updating $moduleName $installedVersion -> $latestVersion ($Scope)" -ForegroundColor Cyan
+
+        # Update-PSResource handles -Confirm itself.
+        # -TrustRepository avoids the untrusted repository prompt for PSGallery.
+        try {
+            Update-PSResource -Name $moduleName -Repository PSGallery -Scope $Scope -TrustRepository -ErrorAction Stop
+        }
+        catch {
+            Write-Error "Update failed: $_"
+            return
+        }
+
+        # Verify the new version is installed - old versions are only removed if it is
+        $newInstalled = Get-InstalledPSResource -Name $moduleName -Version $latestVersion.ToString() -ErrorAction SilentlyContinue
+        if (-not $newInstalled) {
+            Write-Warning "$moduleName $latestVersion was not found after the update (declined at the prompt?). Old versions are kept."
+            return
+        }
+        Write-Host "$moduleName $latestVersion installed. Start a new PowerShell session to use it." -ForegroundColor Green
+    }
+    else {
+        Write-Host "$moduleName $installedVersion is the latest version." -ForegroundColor Green
+    }
+
+    # Remove older versions. "[x.y.z]" is NuGet syntax for an exact version.
+    # Uninstall-PSResource handles -Confirm itself.
+    foreach ($old in $oldVersions) {
+        try {
+            Uninstall-PSResource -Name $moduleName -Version "[$($old.Version)]" -Scope $Scope -ErrorAction Stop
+            Write-Host "Removed $moduleName $($old.Version)" -ForegroundColor Yellow
+        }
+        catch {
+            Write-Warning "Could not remove $moduleName $($old.Version): $_"
+        }
+    }
+}
+#endregion Update-DarkTools
+
 #region Update-Notion
 function Update-Notion {
 <#
