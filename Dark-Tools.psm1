@@ -1711,8 +1711,9 @@ function Find-MSIBrokenSources {
         Finds MSI products with broken source paths in HKCR\Installer\Products.
 
     .DESCRIPTION
-        Traverses HKEY_CLASSES_ROOT\Installer\Products using the .NET RegistryKey API
-        (avoids HKCR PSDrive mounting issues) and checks the following source locations
+        Traverses HKEY_CLASSES_ROOT\Installer\Products using the registry provider with a
+        full Registry:: path (avoids HKCR PSDrive mounting issues and works in Constrained
+        Language Mode) and checks the following source locations
         for each installed product:
 
           - SourceList\LastUsedSource   Value format: n;1;C:\path\to\source\
@@ -1795,8 +1796,8 @@ function Find-MSIBrokenSources {
         [switch]$PassThru
     )
 
-    $currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-    if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    # Admin check via whoami.exe (High Mandatory Level SID) - [WindowsPrincipal] is blocked in CLM
+    if (-not ((whoami.exe /groups) -match 'S-1-16-12288')) {
         throw 'Find-MSIBrokenSources requires administrator privileges. Re-run from an elevated session.'
     }
 
@@ -1805,28 +1806,22 @@ function Find-MSIBrokenSources {
 
     $msg = if ($danish) {
         @{
-            OpenFail        = 'Kunne ikke åbne HKEY_CLASSES_ROOT: {0}'
             NoProductsKey   = 'Kan ikke finde HKCR\Installer\Products — kør som administrator.'
             Traversing      = 'Gennemgår {0} produkter i HKCR\Installer\Products — filter: ''{1}'''
             BrokenCount     = 'Fandt {0} brudte kildereferencer.'
             NoneFound       = 'Ingen brudte MSI-kildereferencer fundet.'
-            ShouldProcess   = 'Slet registreringsværdi'
             Deleted         = '  SLETTET       : {0}'
-            AccessDenied    = '  ADGANG NÆGTET : Kunne ikke åbne {0} med skriveadgang.'
             DeleteError     = '  FEJL          : {0} — {1}'
             Summary         = 'Færdig.  Slettet: {0}  |  Fejl/Sprunget over: {1}'
             Unknown         = '(ukendt)'
         }
     } else {
         @{
-            OpenFail        = 'Could not open HKEY_CLASSES_ROOT: {0}'
             NoProductsKey   = 'Cannot find HKCR\Installer\Products — run as administrator.'
             Traversing      = 'Scanning {0} products in HKCR\Installer\Products — filter: ''{1}'''
             BrokenCount     = 'Found {0} broken source references.'
             NoneFound       = 'No broken MSI source references found.'
-            ShouldProcess   = 'Delete registry value'
             Deleted         = '  DELETED       : {0}'
-            AccessDenied    = '  ACCESS DENIED : Could not open {0} for writing.'
             DeleteError     = '  ERROR         : {0} — {1}'
             Summary         = 'Done.  Deleted: {0}  |  Errors/Skipped: {1}'
             Unknown         = '(unknown)'
@@ -1834,130 +1829,97 @@ function Find-MSIBrokenSources {
     }
     #endregion
 
-    # Open HKCR via .NET directly — avoids HKCR PSDrive mounting issues entirely
-    try {
-        $hkcr = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
-            [Microsoft.Win32.RegistryHive]::ClassesRoot,
-            [Microsoft.Win32.RegistryView]::Registry64
-        )
-    }
-    catch {
-        Write-Error ($msg.OpenFail -f $_)
-        return
-    }
-
-    $productsKey = $hkcr.OpenSubKey('Installer\Products', $false)
-    if (-not $productsKey) {
+    # Registry provider with a full Registry:: path instead of the .NET RegistryKey API (blocked in CLM).
+    # The Registry:: prefix avoids the need for an HKCR PSDrive.
+    $productsPath = 'Registry::HKEY_CLASSES_ROOT\Installer\Products'
+    if (-not (Test-Path -LiteralPath $productsPath)) {
         Write-Error $msg.NoProductsKey
-        $hkcr.Dispose()
         return
     }
 
-    $results      = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $productGUIDs = $productsKey.GetSubKeyNames()
+    # Properties added by the registry provider - not actual registry values
+    $providerProps = @('PSPath', 'PSParentPath', 'PSChildName', 'PSDrive', 'PSProvider')
 
-    Write-Verbose ($msg.Traversing -f $productGUIDs.Count, $ProductName)
+    # Plain array and New-Object PSObject instead of List[PSCustomObject]/[PSCustomObject] for CLM compatibility
+    $results     = @()
+    $productKeys = @(Get-ChildItem -LiteralPath $productsPath -ErrorAction SilentlyContinue)
 
-    foreach ($guid in $productGUIDs) {
-        $productKey = $productsKey.OpenSubKey($guid, $false)
-        if (-not $productKey) { continue }
+    Write-Verbose ($msg.Traversing -f $productKeys.Count, $ProductName)
 
-        $prodName = $productKey.GetValue('ProductName')
+    foreach ($productKey in $productKeys) {
+        $guid        = $productKey.PSChildName
+        $productPath = "$productsPath\$guid"
+
+        $prodName = (Get-ItemProperty -LiteralPath $productPath -Name 'ProductName' -ErrorAction SilentlyContinue).ProductName
         if (-not $prodName) { $prodName = $msg.Unknown }
 
         # Filter on -ProductName (wildcard, case-insensitive)
-        if ($prodName -notlike $ProductName) {
-            $productKey.Dispose()
-            continue
-        }
+        if ($prodName -notlike $ProductName) { continue }
 
-        $sourceListKey = $productKey.OpenSubKey('SourceList', $false)
-        if (-not $sourceListKey) {
-            $productKey.Dispose()
-            continue
-        }
+        $sourceListPath = "$productPath\SourceList"
+        if (-not (Test-Path -LiteralPath $sourceListPath)) { continue }
 
         #region — SourceList\LastUsedSource
-        $lastUsed = $sourceListKey.GetValue('LastUsedSource')
+        $lastUsed = (Get-ItemProperty -LiteralPath $sourceListPath -Name 'LastUsedSource' -ErrorAction SilentlyContinue).LastUsedSource
         if ($lastUsed) {
             # Format: n;1;C:\path\to\folder\  or  n;1;\\server\share\
-            $parts = $lastUsed -split ';', 3
+            $parts = [string]$lastUsed -split ';', 3
             if ($parts.Count -eq 3) {
                 $rawPath = $parts[2].TrimEnd('\', '/')
                 if ($rawPath -match '^([A-Za-z]:|\\\\)') {
                     if (-not (Test-Path -LiteralPath $rawPath -ErrorAction SilentlyContinue)) {
-                        $results.Add([PSCustomObject]@{
+                        $results += New-Object -TypeName PSObject -Property @{
                             GUID        = $guid
                             ProductName = $prodName
                             SourceType  = 'LastUsedSource'
                             ValueName   = 'LastUsedSource'
                             BrokenPath  = $rawPath
                             RegSubKey   = "Installer\Products\$guid\SourceList"
-                        })
+                        }
                     }
                 }
             }
         }
         #endregion
 
-        #region — SourceList\Net\*
-        $netKey = $sourceListKey.OpenSubKey('Net', $false)
-        if ($netKey) {
-            foreach ($valName in $netKey.GetValueNames()) {
-                $val = $netKey.GetValue($valName)
+        #region — SourceList\Net\* and SourceList\Media\* (Media only when value resembles a path)
+        foreach ($sourceType in @('Net', 'Media')) {
+            $subPath = "$sourceListPath\$sourceType"
+            if (-not (Test-Path -LiteralPath $subPath)) { continue }
+
+            $values = Get-ItemProperty -LiteralPath $subPath -ErrorAction SilentlyContinue
+            if (-not $values) { continue }
+
+            foreach ($prop in $values.PSObject.Properties) {
+                if ($prop.Name -in $providerProps) { continue }
+
+                $val = [string]$prop.Value
                 if ($val -and $val -match '^([A-Za-z]:|\\\\)') {
                     $cleanPath = $val.TrimEnd('\', '/')
                     if (-not (Test-Path -LiteralPath $cleanPath -ErrorAction SilentlyContinue)) {
-                        $results.Add([PSCustomObject]@{
+                        $results += New-Object -TypeName PSObject -Property @{
                             GUID        = $guid
                             ProductName = $prodName
-                            SourceType  = 'Net'
-                            ValueName   = $valName
+                            SourceType  = $sourceType
+                            ValueName   = $prop.Name
                             BrokenPath  = $cleanPath
-                            RegSubKey   = "Installer\Products\$guid\SourceList\Net"
-                        })
+                            RegSubKey   = "Installer\Products\$guid\SourceList\$sourceType"
+                        }
                     }
                 }
             }
-            $netKey.Dispose()
         }
         #endregion
-
-        #region — SourceList\Media\* (only when value resembles a path)
-        $mediaKey = $sourceListKey.OpenSubKey('Media', $false)
-        if ($mediaKey) {
-            foreach ($valName in $mediaKey.GetValueNames()) {
-                $val = $mediaKey.GetValue($valName)
-                if ($val -and $val -match '^([A-Za-z]:|\\\\)') {
-                    $cleanPath = $val.TrimEnd('\', '/')
-                    if (-not (Test-Path -LiteralPath $cleanPath -ErrorAction SilentlyContinue)) {
-                        $results.Add([PSCustomObject]@{
-                            GUID        = $guid
-                            ProductName = $prodName
-                            SourceType  = 'Media'
-                            ValueName   = $valName
-                            BrokenPath  = $cleanPath
-                            RegSubKey   = "Installer\Products\$guid\SourceList\Media"
-                        })
-                    }
-                }
-            }
-            $mediaKey.Dispose()
-        }
-        #endregion
-
-        $sourceListKey.Dispose()
-        $productKey.Dispose()
     }
 
-    $productsKey.Dispose()
+    # Fixed property order (New-Object -Property uses a hashtable, which is unordered)
+    $results = @($results | Select-Object GUID, ProductName, SourceType, ValueName, BrokenPath, RegSubKey)
 
     Write-Verbose ($msg.BrokenCount -f $results.Count)
 
     #region — Output
     if ($results.Count -eq 0) {
         Write-Host $msg.NoneFound -ForegroundColor Green
-        $hkcr.Dispose()
         return
     }
 
@@ -1969,27 +1931,28 @@ function Find-MSIBrokenSources {
         $deleted = 0
         $skipped = 0
 
+        # No $PSCmdlet.ShouldProcess() - blocked in CLM. Remove-ItemProperty handles -WhatIf/-Confirm
+        # itself. $WhatIfPreference is passed on automatically; -Confirm is passed explicitly so the
+        # function keeps prompting by default (ConfirmImpact High) unless -Confirm:$false is given.
+        $askConfirm = $ConfirmPreference -ne 'None'
+
         foreach ($item in $results) {
             $displayMsg = "[$($item.SourceType)] '$($item.BrokenPath)' — $($item.ProductName)"
+            $regPath    = "Registry::HKEY_CLASSES_ROOT\$($item.RegSubKey)"
 
-            if ($PSCmdlet.ShouldProcess($displayMsg, $msg.ShouldProcess)) {
-                try {
-                    $writeKey = $hkcr.OpenSubKey($item.RegSubKey, $true)
-                    if ($writeKey) {
-                        $writeKey.DeleteValue($item.ValueName, $true)
-                        $writeKey.Dispose()
-                        Write-Host ($msg.Deleted -f $displayMsg) -ForegroundColor Yellow
-                        $deleted++
-                    }
-                    else {
-                        Write-Warning ($msg.AccessDenied -f $item.RegSubKey)
-                        $skipped++
-                    }
+            try {
+                Remove-ItemProperty -LiteralPath $regPath -Name $item.ValueName -Confirm:$askConfirm -ErrorAction Stop
+
+                # Value gone = deleted. Still there = -WhatIf or declined at the prompt.
+                $stillThere = Get-ItemProperty -LiteralPath $regPath -Name $item.ValueName -ErrorAction SilentlyContinue
+                if (-not $stillThere) {
+                    Write-Host ($msg.Deleted -f $displayMsg) -ForegroundColor Yellow
+                    $deleted++
                 }
-                catch {
-                    Write-Warning ($msg.DeleteError -f $displayMsg, $_)
-                    $skipped++
-                }
+            }
+            catch {
+                Write-Warning ($msg.DeleteError -f $displayMsg, $_)
+                $skipped++
             }
         }
 
@@ -1997,8 +1960,6 @@ function Find-MSIBrokenSources {
         Write-Host ($msg.Summary -f $deleted, $skipped) -ForegroundColor Cyan
     }
     #endregion
-
-    $hkcr.Dispose()
 
     if ($PassThru -or -not $Fix) {
         return $results
@@ -3479,78 +3440,6 @@ function Test-PendingReboot {
 }
 #endregion Test-PendingReboot
 
-#region Test-SoftwareSources
-function Test-SoftwareSources {
-    <#
-    .SYNOPSIS
-        Checks for invalid software source paths in registry.
-    .DESCRIPTION
-        Scans Windows Installer registry for software products with missing or invalid source paths. Optionally removes invalid source entries.
-    .PARAMETER DeleteInvalidSources
-        If specified, removes invalid source entries from registry.
-    .OUTPUTS
-        Displays summary of total products, products with sources, and invalid products.
-    .EXAMPLE
-        Test-SoftwareSources
-        Reports invalid sources without deleting.
-    .EXAMPLE
-        Test-SoftwareSources -DeleteInvalidSources
-        Removes invalid source entries.
-    #>
-    param(
-        [switch]$DeleteInvalidSources
-    )
-
-    $regPath = "HKLM:\SOFTWARE\Classes\Installer\Products"
-
-    $totalProducts   = 0
-    $checkedProducts = 0
-    $invalidProducts = 0
-
-    foreach ($productKey in Get-ChildItem $regPath) {
-        $totalProducts++
-
-        $netKeyPath = Join-Path $productKey.PSPath 'SourceList\Net'
-        if (-not (Test-Path -LiteralPath $netKeyPath)) {
-            continue  # helt normalt – ikke en fejl
-        }
-
-        $checkedProducts++
-        $productInvalid = $false
-
-        foreach ($sourceKey in Get-ChildItem $netKeyPath -ErrorAction SilentlyContinue) {
-
-            $regItem = Get-Item $sourceKey.PSPath -ErrorAction SilentlyContinue
-            if (-not $regItem) { continue }
-
-            $sourcePath = $regItem.GetValue('')
-            if ([string]::IsNullOrWhiteSpace($sourcePath)) { continue }
-
-            $sourcePath = $sourcePath -replace '^n;1;',''
-
-            if (-not (Test-Path -LiteralPath $sourcePath)) {
-                $productInvalid = $true
-
-                Write-Output "Product : $($productKey.PSChildName)"
-                Write-Output "Missing : $sourcePath"
-                Write-Output ""
-
-                if ($DeleteInvalidSources) {
-                    Remove-Item -LiteralPath $netKeyPath -Recurse -Force -ErrorAction SilentlyContinue
-                    break
-                }
-            }
-        }
-
-        if ($productInvalid) { $invalidProducts++ }
-    }
-
-    Write-Output "Total products        : $totalProducts"
-    Write-Output "Products with Net     : $checkedProducts"
-    Write-Output "Products with errors  : $invalidProducts"
-}
-#endregion Test-SoftwareSources
-
 #region Update-Notion
 function Update-Notion {
 <#
@@ -4010,9 +3899,8 @@ function Move-FilesUpOneLevel {
         foreach ($file in $files) {
             $destination = Join-Path -Path $Path -ChildPath $file.Name
 
-            if ($PSCmdlet.ShouldProcess($file.FullName, "Move to $destination")) {
-                Move-Item -Path $file.FullName -Destination $destination
-            }
+            # No $PSCmdlet.ShouldProcess() - blocked in CLM. Move-Item handles -WhatIf/-Confirm itself.
+            Move-Item -Path $file.FullName -Destination $destination
         }
     }
 
@@ -4024,9 +3912,8 @@ function Move-FilesUpOneLevel {
             $remainingFiles = Get-ChildItem -Path $folder.FullName -File -Recurse -Force
 
             if (-not $remainingFiles) {
-                if ($PSCmdlet.ShouldProcess($folder.FullName, "Remove empty folder")) {
-                    Remove-Item -Path $folder.FullName -Recurse -Force
-                }
+                # Remove-Item handles -WhatIf/-Confirm itself
+                Remove-Item -Path $folder.FullName -Recurse -Force
             }
         }
     }

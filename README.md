@@ -1,6 +1,6 @@
 ## Dark-Tools 🛠️
 
-[![version](https://img.shields.io/badge/version-1.6.1-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
+[![version](https://img.shields.io/badge/version-1.6.2-blue.svg)](https://github.com/supersej/Dark-Tools/releases)
 [![maintainer](https://img.shields.io/badge/maintainer-Supersej-blue.svg)](https://github.com/supersej)
 [![buy_me_a_coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/darkdk)
 
@@ -34,6 +34,21 @@ CN=John Doe,OU=Users,DC=contoso,DC=com
 ```powershell
 ConvertFrom-DistinguishedName -DistinguishedName "CN=John Doe,OU=Users,DC=contoso,DC=com"
 contoso.com/Users/John Doe
+```
+
+- **Find-MSIBrokenSources** - Finds MSI products with broken source paths (LastUsedSource, Net and Media) in HKCR\Installer\Products, and optionally removes them with -Fix. Requires an elevated session. Works in Constrained Language Mode.
+```powershell
+Find-MSIBrokenSources -ProductName "TeamView*"
+
+ProductName SourceType     BrokenPath                       ValueName      GUID
+----------- ----------     ----------                       ---------      ----
+TeamViewer  LastUsedSource \\server\share\TeamViewer       LastUsedSource 1A2B3C4D5E6F...
+TeamViewer  Net            \\server\share\TeamViewer       1              1A2B3C4D5E6F...
+```
+```powershell
+Find-MSIBrokenSources -ProductName "TeamView*" -Fix -WhatIf   # show what would be deleted
+Find-MSIBrokenSources -ProductName "TeamView*" -Fix           # delete, asks for each value
+Find-MSIBrokenSources -Fix -Confirm:$false                    # delete all without prompting
 ```
 
 - **Format-MacAddress** - Cleans and formats MAC address strings with customizable separators, case conversion, and split patterns.
@@ -281,14 +296,6 @@ Test-PendingReboot
 RebootRequired Reasons
 -------------- -------
           True Component Based Servicing, Pending file rename operations
-```
-
-- **Test-SoftwareSources** - Checks for invalid software source paths in registry under HKLM:\SOFTWARE\Classes\Installer\Products.
-```powershell
-Test-SoftwareSources
-Total products        : 81
-Products with Net     : 81
-Products with errors  : 0
 ```
 
 - **Update-Notion** - Updates Notion application to the latest version.
